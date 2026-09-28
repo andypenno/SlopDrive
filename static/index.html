@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SlopBox</title>
+  <style>
+    :root { color-scheme: light dark; font: 1rem/1.5 system-ui, sans-serif; }
+    body { max-width: 52rem; margin: 4rem auto; padding: 0 1.5rem; }
+    code, pre { font-family: ui-monospace, monospace; }
+    pre { overflow-x: auto; padding: 1rem; background: rgba(128,128,128,.15); border-radius: .4rem; }
+  </style>
+</head>
+<body>
+  <h1>SlopBox</h1>
+  <p>A host for single-file HTML pages. Each upload gets a random ID. The URL <code>/&lt;upload-id&gt;</code> shows the latest version. Add <code>?q=&lt;sha256-hash&gt;</code> to view one version. There is no directory of pages.</p>
+  <h2>Connect an MCP client</h2>
+  <p>Configure a streamable HTTP MCP server at this site's <code>/mcp</code> endpoint. Send <code>Authorization: Bearer &lt;API_KEY&gt;</code> on every request. The tools are <code>upload_html</code>, <code>update_html</code>, <code>list_versions</code>, and <code>get_html_url</code>.</p>
+  <pre>{
+  "mcpServers": {
+    "html_host": {
+      "url": "https://your-host.example/mcp",
+      "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+    }
+  }
+}</pre>
+  <h2>Install the agent skill</h2>
+  <p>The <code>skills/slopbox</code> directory in the <a href="https://github.com/andypenno/SlopBox">private SlopBox repository</a> contains a skill to advise your agent. Install it using your agent's skill loader, then configure the MCP connection above.</p>
+  <p>API keys are created locally with <code>slopbox keys create</code>. The HTTP upload API accepts <code>POST /upload</code> and <code>POST /upload/&lt;upload-id&gt;</code> with a <code>file</code> multipart field. Version lists require <code>GET /upload/&lt;upload-id&gt;/versions</code> and the same bearer key.</p>
+</body>
+</html>
