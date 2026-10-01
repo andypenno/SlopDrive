@@ -808,3 +808,89 @@ async fn mcp_discovery_advertises_complete_schemas_and_notifications_do_not_writ
         assert_eq!(response["error"]["code"], -32600);
     }
 }
+
+#[tokio::test]
+async fn mcp_rejects_undeclared_tool_arguments() {
+    let fixture = TestApp::new();
+    let (_, response) = fixture.mcp(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upload_html","arguments":{"content":"<p>x</p>","typo":1}}})).await;
+    assert_eq!(response["error"]["code"], -32602);
+    assert_eq!(
+        std::fs::read_dir(fixture.dir.path().join("uploads"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn mcp_argument_validation_applies_to_every_tool_and_field() {
+    let fixture = TestApp::new();
+    let (_, created) = fixture.post_html("/upload", b"<p>x</p>").await;
+    let id = created["upload_id"].as_str().unwrap();
+    let tools = [
+        ("upload_html", json!({"content":"<p>x</p>"})),
+        ("update_html", json!({"upload_id":id,"content":"<p>x</p>"})),
+        ("list_versions", json!({"upload_id":id})),
+        (
+            "get_html_url",
+            json!({"upload_id":id,"version_hash":created["content_hash"]}),
+        ),
+    ];
+    for (name, valid) in tools {
+        assert_eq!(
+            fixture.tool(1, name, valid.clone()).await["isError"],
+            false,
+            "{name}"
+        );
+        let mut invalid_cases = vec![json!(null), json!([]), json!(1), json!("bad")];
+        let mut extra = valid.clone();
+        extra["typo"] = json!("unexpected");
+        invalid_cases.push(extra);
+        for field in valid.as_object().unwrap().keys() {
+            for value in [json!(null), json!(false), json!(42), json!([]), json!({})] {
+                let mut invalid = valid.clone();
+                invalid[field] = value;
+                invalid_cases.push(invalid);
+            }
+        }
+        for arguments in invalid_cases {
+            let (_, response) = fixture.mcp(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":arguments}})).await;
+            assert_eq!(response["error"]["code"], -32602, "{name}: {response}");
+        }
+    }
+    assert_eq!(
+        std::fs::read_dir(fixture.dir.path().join("uploads"))
+            .unwrap()
+            .count(),
+        2
+    );
+    assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn mcp_request_id_and_params_validation_accepts_and_rejects_json_types() {
+    let fixture = TestApp::new();
+    for id in [json!(null), json!(1), json!("request")] {
+        for params in [json!({}), json!([])] {
+            let (_, response) = fixture
+                .mcp(json!({"jsonrpc":"2.0","id":id,"method":"ping","params":params}))
+                .await;
+            assert_eq!(response["id"], id);
+            assert_eq!(response["result"], json!({}));
+        }
+    }
+    for id in [json!(false), json!([]), json!({})] {
+        let (_, response) = fixture
+            .mcp(json!({"jsonrpc":"2.0","id":id,"method":"ping"}))
+            .await;
+        assert_eq!(response["id"], Value::Null);
+        assert_eq!(response["error"]["code"], -32600);
+    }
+    for params in [json!(null), json!(false), json!(1), json!("bad")] {
+        let (_, response) = fixture
+            .mcp(json!({"jsonrpc":"2.0","id":"request","method":"ping","params":params}))
+            .await;
+        assert_eq!(response["id"], "request");
+        assert_eq!(response["error"]["code"], -32600);
+    }
+}

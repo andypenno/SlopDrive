@@ -13,6 +13,18 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Response {
     };
     let id = request.get("id").cloned();
     let method = request.get("method").and_then(Value::as_str);
+    if id
+        .as_ref()
+        .is_some_and(|id| !id.is_null() && !id.is_string() && !id.is_number())
+    {
+        return rpc_error(Value::Null, -32600, "invalid request ID").into_response();
+    }
+    if request
+        .get("params")
+        .is_some_and(|params| !params.is_object() && !params.is_array())
+    {
+        return rpc_error(id.unwrap_or(Value::Null), -32600, "invalid params").into_response();
+    }
     if request.get("jsonrpc") != Some(&json!("2.0")) || method.is_none() {
         return rpc_error(id.unwrap_or(Value::Null), -32600, "invalid request").into_response();
     }
@@ -106,6 +118,23 @@ fn tool_call(state: &AppState, params: &Value) -> Result<Value, String> {
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    let definitions = tool_definitions();
+    let definition = definitions
+        .as_array()
+        .expect("tool definitions array")
+        .iter()
+        .find(|tool| tool["name"] == name)
+        .ok_or("unknown tool")?;
+    let fields = arguments.as_object().ok_or("arguments must be an object")?;
+    let properties = &definition["inputSchema"]["properties"];
+    for (field, value) in fields {
+        if properties.get(field).is_none() {
+            return Err(format!("unknown argument {field}"));
+        }
+        if !value.is_string() {
+            return Err(format!("{field} must be a string"));
+        }
+    }
     let result: Result<Value, AppError> = match name {
         "upload_html" => upload(state, None, required(&arguments, "content")?)
             .map(|value| serde_json::to_value(value).expect("serializable response")),
