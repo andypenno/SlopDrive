@@ -1,3 +1,4 @@
+mod helpers;
 mod keys;
 mod mcp;
 mod storage;
@@ -10,6 +11,10 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::{Parser, Subcommand};
+use helpers::{
+    MAX_HTML_BYTES, authorize, multipart_html, page_url, upload_response, valid_hash, valid_id,
+    validate_html, version_response,
+};
 use keys::KeyStore;
 use serde::Serialize;
 use serde_json::json;
@@ -17,10 +22,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use storage::{FilesystemStorage, Saved, Storage, StoreError, Version, valid_hash, valid_id};
+use storage::{FilesystemStorage, Storage, StoreError};
 use url::Url;
-
-const MAX_HTML_BYTES: usize = 1024 * 1024;
 
 #[derive(Parser)]
 #[command(name = "slopbox", about = "Single-file HTML host")]
@@ -198,19 +201,6 @@ async fn root() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
 
-pub(crate) fn authorize(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
-    let key = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
-    if state.keys.valid(key) {
-        Ok(())
-    } else {
-        Err(AppError::Unauthorized)
-    }
-}
-
 async fn auth_guard(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -219,30 +209,6 @@ async fn auth_guard(
 ) -> Result<Response, AppError> {
     authorize(&state, &headers)?;
     Ok(next.run(request).await)
-}
-
-pub(crate) fn validate_html(content: &str) -> Result<(), AppError> {
-    if content.is_empty() || content.len() > MAX_HTML_BYTES || content.contains('\0') {
-        return Err(AppError::BadRequest(
-            "HTML must be nonempty, valid UTF-8, and at most 1 MiB".into(),
-        ));
-    }
-    let dom = tl::parse(content, tl::ParserOptions::default())
-        .map_err(|_| AppError::BadRequest("invalid HTML".into()))?;
-    if content.rfind('<') > content.rfind('>') {
-        return Err(AppError::BadRequest("invalid HTML".into()));
-    }
-    let mut has_tag = false;
-    for tag in dom.nodes().iter().filter_map(|node| node.as_tag()) {
-        let name = tag.name().as_utf8_str();
-        if name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
-            has_tag = true;
-        }
-    }
-    if !has_tag {
-        return Err(AppError::BadRequest("HTML must contain an element".into()));
-    }
-    Ok(())
 }
 
 pub(crate) fn upload(
@@ -259,25 +225,6 @@ pub(crate) fn upload(
     Ok(upload_response(state, saved))
 }
 
-fn upload_response(state: &AppState, saved: Saved) -> UploadResponse {
-    let url = page_url(state, &saved.upload_id, None);
-    let versioned_url = page_url(state, &saved.upload_id, Some(&saved.version.content_hash));
-    UploadResponse {
-        upload_id: saved.upload_id,
-        content_hash: saved.version.content_hash,
-        url,
-        versioned_url,
-    }
-}
-
-fn page_url(state: &AppState, id: &str, hash: Option<&str>) -> String {
-    let mut url = state.base_url.join(id).expect("validated base URL and ID");
-    if let Some(hash) = hash {
-        url.query_pairs_mut().append_pair("q", hash);
-    }
-    url.to_string()
-}
-
 pub(crate) fn versions(state: &AppState, id: &str) -> Result<VersionListResponse, AppError> {
     let versions = state.storage.versions(id)?;
     Ok(VersionListResponse {
@@ -289,16 +236,6 @@ pub(crate) fn versions(state: &AppState, id: &str) -> Result<VersionListResponse
     })
 }
 
-fn version_response(state: &AppState, id: &str, version: Version) -> VersionResponse {
-    VersionResponse {
-        url: page_url(state, id, None),
-        versioned_url: page_url(state, id, Some(&version.content_hash)),
-        content_hash: version.content_hash,
-        created_at: version.created_at,
-        size_bytes: version.size_bytes,
-    }
-}
-
 pub(crate) fn get_page_url(
     state: &AppState,
     id: &str,
@@ -306,33 +243,6 @@ pub(crate) fn get_page_url(
 ) -> Result<String, AppError> {
     state.storage.get(id, hash)?;
     Ok(page_url(state, id, hash))
-}
-
-async fn multipart_html(mut multipart: Multipart) -> Result<String, AppError> {
-    let mut html = None;
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|error| AppError::BadRequest(error.to_string()))?
-    {
-        if field.name() != Some("file") || html.is_some() {
-            return Err(AppError::BadRequest("expected one file field".into()));
-        }
-        if field.content_type() != Some("text/html") {
-            return Err(AppError::BadRequest(
-                "file must have content type text/html".into(),
-            ));
-        }
-        let bytes = field
-            .bytes()
-            .await
-            .map_err(|error| AppError::BadRequest(error.to_string()))?;
-        html = Some(
-            String::from_utf8(bytes.to_vec())
-                .map_err(|_| AppError::BadRequest("file must be UTF-8".into()))?,
-        );
-    }
-    html.ok_or_else(|| AppError::BadRequest("missing file field".into()))
 }
 
 async fn create_upload(
@@ -404,4 +314,17 @@ async fn get_html(
 }
 
 #[cfg(test)]
-mod tests;
+#[path = "../tests/support/helpers.rs"]
+mod test_helpers;
+
+#[cfg(test)]
+#[path = "../tests/http.rs"]
+mod http_tests;
+
+#[cfg(test)]
+#[path = "../tests/mcp.rs"]
+mod mcp_tests;
+
+#[cfg(test)]
+#[path = "../tests/parity.rs"]
+mod parity_tests;

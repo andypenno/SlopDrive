@@ -1,3 +1,4 @@
+use crate::helpers::{required, rpc_error, tool_error};
 use crate::{AppError, AppState, get_page_url, upload, versions};
 use axum::Json;
 use axum::body::Bytes;
@@ -48,10 +49,6 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Response {
         Ok(result) => Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })).into_response(),
         Err(error) => rpc_error(id, -32602, &error).into_response(),
     }
-}
-
-fn rpc_error(id: Value, code: i32, message: &str) -> Json<Value> {
-    Json(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }))
 }
 
 fn tool_definitions() -> Value {
@@ -105,13 +102,6 @@ fn tool_definitions() -> Value {
     ])
 }
 
-fn required<'a>(arguments: &'a Value, name: &str) -> Result<&'a str, String> {
-    arguments
-        .get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("missing {name}"))
-}
-
 fn tool_call(state: &AppState, params: &Value) -> Result<Value, String> {
     let name = required(params, "name")?;
     let arguments = params
@@ -160,44 +150,5 @@ fn tool_call(state: &AppState, params: &Value) -> Result<Value, String> {
             "isError": false
         })),
         Err(error) => Ok(tool_error(error)),
-    }
-}
-
-fn tool_error(error: AppError) -> Value {
-    let message = match error {
-        AppError::BadRequest(message) => message,
-        AppError::NotFound => "not found".to_owned(),
-        AppError::Unauthorized => "unauthorized".to_owned(),
-        AppError::Internal(message) => {
-            tracing::error!(error = %message, "MCP tool failed");
-            "internal error".to_owned()
-        }
-    };
-    json!({ "content": [{ "type": "text", "text": message }], "isError": true })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tool_errors_return_client_messages_without_internal_details() {
-        for (error, message) in [
-            (
-                AppError::BadRequest("invalid content".into()),
-                "invalid content",
-            ),
-            (AppError::NotFound, "not found"),
-            (AppError::Unauthorized, "unauthorized"),
-            (
-                AppError::Internal("private storage detail".into()),
-                "internal error",
-            ),
-        ] {
-            assert_eq!(
-                tool_error(error),
-                json!({"content":[{"type":"text","text":message}],"isError":true})
-            );
-        }
     }
 }

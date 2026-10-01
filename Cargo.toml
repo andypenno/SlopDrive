@@ -2,6 +2,8 @@
 name = "slopbox"
 version = "0.1.0"
 edition = "2024"
+# Private unit modules are compiled by their owners, not as integration crates.
+autotests = false
 
 [dependencies]
 anyhow = "1"
@@ -24,3 +26,7 @@ url = "2"
 [dev-dependencies]
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
