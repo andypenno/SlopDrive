@@ -1,4 +1,4 @@
-use crate::storage::{StoreError, atomic_write, hash, random_hex};
+use crate::storage::{StoreError, atomic_write, hash, not_found, random_hex};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -59,13 +59,7 @@ impl KeyStore {
         if !valid_key_id(id) {
             return Err(StoreError::InvalidId);
         }
-        fs::remove_file(self.directory.join(format!("{id}.json"))).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                StoreError::NotFound
-            } else {
-                StoreError::Io(error)
-            }
-        })?;
+        fs::remove_file(self.directory.join(format!("{id}.json"))).map_err(not_found)?;
         Ok(())
     }
 

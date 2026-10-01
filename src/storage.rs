@@ -209,7 +209,7 @@ fn version_for(html: &[u8]) -> Version {
     }
 }
 
-fn not_found(error: std::io::Error) -> StoreError {
+pub(crate) fn not_found(error: std::io::Error) -> StoreError {
     if error.kind() == std::io::ErrorKind::NotFound {
         StoreError::NotFound
     } else {
