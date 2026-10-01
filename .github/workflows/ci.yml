@@ -29,6 +29,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: Homepage clipboard checks
+        run: node tests/homepage.cjs
 
   container:
     name: Container checks

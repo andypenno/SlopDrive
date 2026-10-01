@@ -2,6 +2,8 @@
 
 Run the checks required by [AGENTS.md](../AGENTS.md) before committing code. A bug fix needs a check that fails on the original behavior. Exercise observable results and preservation of data, not only status codes or counts.
 
+Run `node tests/homepage.cjs` for homepage clipboard behavior. This dependency-free check executes the page's script with successful, denied, and unavailable clipboard access. Also check the page in a browser for layout, keyboard access, and actual clipboard permissions.
+
 Use real routers and temporary stores for transport tests. Test successful requests, malformed inputs, exact size boundaries, missing data, retries, historical versions, and failure redaction. Paired HTTP and MCP checks must exercise the same shared behavior. Inspect complete version sets and retrieve their bytes when testing concurrency.
 
 Keep private-state unit checks attached to their owning module with `cfg(test)` and a path into the test directory. Integration executables are explicit Cargo test targets; add a target when adding one. Disabling automatic integration discovery prevents private unit modules from being compiled a second time as standalone crates. Keep fixture construction in test-only helpers rather than exposing production internals.

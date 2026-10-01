@@ -3,29 +3,178 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SlopBox</title>
+  <meta name="description" content="Publish self-contained HTML pages with SlopBox. Connect your agent, publish a page, and share a link that stays up to date.">
+  <meta name="theme-color" content="#141713">
+  <title>SlopBox · A home for your HTML</title>
   <style>
-    :root { color-scheme: light dark; font: 1rem/1.5 system-ui, sans-serif; }
-    body { max-width: 52rem; margin: 4rem auto; padding: 0 1.5rem; }
-    code, pre { font-family: ui-monospace, monospace; }
-    pre { overflow-x: auto; padding: 1rem; background: rgba(128,128,128,.15); border-radius: .4rem; }
+    :root { color-scheme: dark; --paper: #141713; --ink: #f0f2e9; --muted: #aab2a1; --line: #343c30; --accent: #ff916c; font: 16px/1.6 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); }
+    a { color: inherit; text-underline-offset: .22em; }
+    a:hover { color: var(--accent); }
+    a:focus-visible, button:focus-visible, pre:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin-inline: auto; }
+    .skip { position: absolute; top: -100px; left: 24px; padding: 12px; background: var(--paper); z-index: 5; }
+    .skip:focus { top: 12px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-block: 28px; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 1.3rem; font-weight: 800; letter-spacing: -.05em; text-decoration: none; }
+    .mark { width: 32px; height: 32px; display: grid; place-items: center; background: var(--accent); color: var(--paper); border-radius: 6px; font: 700 16px/1 ui-monospace, monospace; letter-spacing: -.16em; padding-right: 2px; }
+    nav { display: flex; gap: 26px; font-size: .88rem; }
+    nav a { text-decoration: none; }
+    .hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 64px; align-items: center; padding-block: 90px 80px; }
+    .eyebrow { margin: 0 0 20px; font: 600 .73rem/1.5 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+    h1 { font-size: clamp(3.2rem, 6.2vw, 5.2rem); line-height: 1.02; letter-spacing: -.065em; font-weight: 750; margin: 0 0 26px; }
+    h1 span { color: var(--accent); }
+    .intro { max-width: 420px; font-size: 1.12rem; color: var(--muted); margin: 0 0 30px; }
+    .button { display: inline-flex; align-items: center; gap: 30px; background: var(--accent); color: var(--paper); padding: 14px 22px; border-radius: 6px; text-decoration: none; font-weight: 600; }
+    .button:hover { background: #ffb294; color: var(--paper); }
+    .footnote { font-size: .78rem; color: var(--muted); margin: 14px 0 0; }
+    .preview { position: relative; padding: 28px 12px 26px 26px; }
+    .preview::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1.5px, transparent 1.5px); background-size: 16px 16px; }
+    .window { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #20261d; box-shadow: 10px 14px 0 #0b0e0a; transform: rotate(-3deg); }
+    .window-top { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); font: .65rem/1.4 ui-monospace, monospace; color: var(--muted); }
+    .dots { display: flex; gap: 4px; }
+    .dots i { width: 6px; height: 6px; border-radius: 50%; background: #738265; }
+    .page { padding: 30px; }
+    .page-label { font: .65rem/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .12em; }
+    .page-title { font-size: 2.2rem; line-height: 1.1; letter-spacing: -.05em; font-weight: 750; margin: 15px 0 22px; }
+    .bars { height: 110px; display: flex; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); }
+    .bars span { flex: 1; background: #819c69; border-radius: 4px 4px 0 0; }
+    .bars span:nth-child(1) { height: 35%; }
+    .bars span:nth-child(2) { height: 58%; }
+    .bars span:nth-child(3) { height: 48%; }
+    .bars span:nth-child(4) { height: 75%; }
+    .bars span:nth-child(5) { height: 100%; background: var(--accent); }
+    .page-bottom { display: flex; justify-content: space-between; margin-top: 15px; font: .65rem/1.4 ui-monospace, monospace; color: var(--muted); }
+    .preview-caption { position: relative; text-align: center; margin: 28px 0 0; color: var(--muted); font: .75rem/1.5 ui-monospace, monospace; }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); border-block: 1px solid var(--line); padding-block: 28px; gap: 40px; }
+    h2 { font-size: clamp(2rem, 4vw, 2.6rem); line-height: 1.15; letter-spacing: -.045em; margin: 0 0 18px; }
+    h3 { font-size: 1rem; margin: 0 0 8px; letter-spacing: -.02em; }
+    .features p { margin: 0; font-size: .9rem; color: var(--muted); }
+    .connect { display: grid; grid-template-columns: 1fr 1.15fr; gap: 64px; padding-block: 76px; align-items: start; }
+    .connect p { color: var(--muted); }
+    .steps { list-style: none; padding: 0; margin: 30px 0 0; counter-reset: steps; }
+    .steps li { counter-increment: steps; position: relative; padding: 0 0 22px 38px; font-size: .9rem; }
+    .steps li::before { content: counter(steps, decimal-leading-zero); position: absolute; left: 0; top: 2px; font: .7rem/1.5 ui-monospace, monospace; color: var(--accent); }
+    .steps strong { display: block; margin-bottom: 4px; }
+    .steps p { margin: 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    :not(pre) > code { font-size: .85em; overflow-wrap: anywhere; }
+    .config { min-width: 0; border-radius: 10px; background: #252a23; color: #f0f2e9; overflow: hidden; }
+    .config-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 22px; border-bottom: 1px solid #41463a; color: #c1c8b5; font: .75rem/1.5 ui-monospace, monospace; }
+    .copy { font: inherit; color: var(--ink); background: #343c30; border: 1px solid #637057; border-radius: 5px; padding: 8px 12px; cursor: pointer; }
+    .copy:hover { border-color: var(--accent); }
+    .copy:disabled { opacity: .6; cursor: wait; }
+    .copy-status { margin: 0; padding: 0 22px 16px; font-size: .8rem; color: var(--accent) !important; }
+    .copy-status:empty { display: none; }
+    pre { overflow-x: auto; margin: 0; padding: 24px 22px; font-size: .8rem; line-height: 1.9; }
+    .config-note { border-top: 1px solid #41463a; margin: 0; padding: 16px 22px; font-size: .78rem; color: #c1c8b5 !important; }
+    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-block: 24px 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+    footer p { margin: 0; }
+    @media (max-width: 800px) {
+      .hero, .connect { grid-template-columns: 1fr; gap: 40px; padding-block: 48px; }
+      .hero { gap: 32px; }
+      .preview { max-width: 440px; width: 100%; margin-inline: auto; }
+      .features { gap: 24px; }
+    }
+    @media (max-width: 520px) {
+      .wrap { width: calc(100% - 36px); }
+      header { padding-block: 22px; }
+      nav { gap: 16px; font-size: .8rem; }
+      .features { grid-template-columns: 1fr; }
+      h1 { font-size: 3.4rem; }
+      pre { font-size: .72rem; padding: 20px 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
 <body>
-  <h1>SlopBox</h1>
-  <p>A host for single-file HTML pages. Each upload gets a random ID. The URL <code>/&lt;upload-id&gt;</code> shows the latest version. Add <code>?q=&lt;sha256-hash&gt;</code> to view one version. There is no directory of pages.</p>
-  <h2>Connect an MCP client</h2>
-  <p>Configure a streamable HTTP MCP server at this site's <code>/mcp</code> endpoint. Send <code>Authorization: Bearer &lt;API_KEY&gt;</code> on every request. The tools are <code>upload_html</code>, <code>update_html</code>, <code>list_versions</code>, and <code>get_html_url</code>.</p>
-  <pre>{
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="/" aria-label="SlopBox home"><span class="mark" aria-hidden="true">&lt;/&gt;</span>SlopBox</a>
+      <nav aria-label="Main navigation"><a href="#connect">Connect</a><a href="https://github.com/andypenno/SlopBox">GitHub ↗</a></nav>
+    </header>
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">Small pages. Shareable links.</p>
+          <h1 id="hero-title">A home for<br>your <span>HTML.</span></h1>
+          <p class="intro">Turn an agent's HTML into a page anyone can open. Publish it, share the link, and keep it up to date.</p>
+          <a class="button" href="#connect">Connect your agent <span aria-hidden="true">↗</span></a>
+          <p class="footnote">One HTML file. One link. No build step.</p>
+        </div>
+        <div class="preview" aria-hidden="true">
+          <div class="window">
+            <div class="window-top"><span class="dots"><i></i><i></i><i></i></span><span>your page / a little progress report</span></div>
+            <div class="page">
+              <span class="page-label">From idea to something you can share</span>
+              <p class="page-title">Look what<br>we made.</p>
+              <div class="bars"><span></span><span></span><span></span><span></span><span></span></div>
+              <div class="page-bottom"><span>Built by your agent</span><span>Shared by you ↗</span></div>
+            </div>
+          </div>
+          <p class="preview-caption">Reports, prototypes, explainers. Your call.</p>
+        </div>
+      </section>
+      <section class="features" aria-label="How sharing works">
+        <div><h3>A link that keeps up</h3><p>Update a page and its original link shows the latest version. No need to send a new one.</p></div>
+        <div><h3>Earlier versions stay put</h3><p>Share a version-specific link when you want readers to see exactly what you published.</p></div>
+        <div><h3>Yours to share</h3><p>Publishing needs an API key. Viewing needs the link. There is no public directory of pages.</p></div>
+      </section>
+      <section class="connect" id="connect" aria-labelledby="connect-title">
+        <div>
+          <p class="eyebrow">Get connected</p>
+          <h2 id="connect-title">Your agent makes it.<br>SlopBox hosts it.</h2>
+          <p>Add SlopBox to your agent's MCP connections, then ask it to publish a self-contained HTML page.</p>
+          <ol class="steps">
+            <li><strong>Get an API key</strong><p>Ask the instance owner for a key. Running your own instance? Create one with <code>slopbox keys create</code>.</p></li>
+            <li><strong>Add the connection</strong><p>Use this site's address followed by <code>/mcp</code>. Replace the example address and key in the configuration.</p></li>
+            <li><strong>Give your agent the skill</strong><p>Install <a href="https://github.com/andypenno/SlopBox/tree/master/skills/slopbox">the SlopBox skill</a> through your agent's skill loader. Keep the connection name <code>html_host</code>, then ask your agent to publish and share a link.</p></li>
+          </ol>
+        </div>
+        <div class="config">
+          <div class="config-title"><span>MCP connection configuration</span><button class="copy" id="copy-config" type="button">Copy config</button></div>
+          <pre id="config-block" tabindex="0" aria-label="Example MCP configuration"><code id="config-json">{
   "mcpServers": {
     "html_host": {
-      "url": "https://your-host.example/mcp",
-      "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+      "url": "https://pages.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
     }
   }
-}</pre>
-  <h2>Install the agent skill</h2>
-  <p>The <code>skills/slopbox</code> directory in the <a href="https://github.com/andypenno/SlopBox">private SlopBox repository</a> contains a skill to advise your agent. Install it using your agent's skill loader, then configure the MCP connection above.</p>
-  <p>API keys are created locally with <code>slopbox keys create</code>. The HTTP upload API accepts <code>POST /upload</code> and <code>POST /upload/&lt;upload-id&gt;</code> with a <code>file</code> multipart field. Version lists require <code>GET /upload/&lt;upload-id&gt;/versions</code> and the same bearer key.</p>
+}</code></pre>
+          <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
+          <p class="config-note">Treat your API key like a password. Keep it in your agent's configuration, never in a published page.</p>
+        </div>
+      </section>
+    </main>
+    <footer><p>SlopBox. A small place for things you make.</p><a href="https://github.com/andypenno/SlopBox#readme">Run your own instance ↗</a></footer>
+  </div>
+  <script>
+    const copyButton = document.getElementById('copy-config');
+    const config = document.getElementById('config-json');
+    const copyStatus = document.getElementById('copy-status');
+    copyButton.addEventListener('click', async () => {
+      copyButton.disabled = true;
+      copyStatus.textContent = '';
+      try {
+        await navigator.clipboard.writeText(config.textContent);
+        copyStatus.textContent = 'Configuration copied. Replace the example address and API key before connecting.';
+      } catch {
+        document.getElementById('config-block').focus();
+        const range = document.createRange();
+        range.selectNodeContents(config);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        copyStatus.textContent = 'Clipboard access unavailable. Configuration selected. Press Ctrl+C or Command+C to copy.';
+      } finally {
+        copyButton.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
