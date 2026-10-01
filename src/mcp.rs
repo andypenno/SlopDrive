@@ -175,3 +175,29 @@ fn tool_error(error: AppError) -> Value {
     };
     json!({ "content": [{ "type": "text", "text": message }], "isError": true })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_errors_return_client_messages_without_internal_details() {
+        for (error, message) in [
+            (
+                AppError::BadRequest("invalid content".into()),
+                "invalid content",
+            ),
+            (AppError::NotFound, "not found"),
+            (AppError::Unauthorized, "unauthorized"),
+            (
+                AppError::Internal("private storage detail".into()),
+                "internal error",
+            ),
+        ] {
+            assert_eq!(
+                tool_error(error),
+                json!({"content":[{"type":"text","text":message}],"isError":true})
+            );
+        }
+    }
+}

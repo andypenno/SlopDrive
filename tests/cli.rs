@@ -96,3 +96,19 @@ fn cli_reports_storage_initialization_failures() {
         assert_eq!(std::fs::read(&blocker).unwrap(), b"existing");
     }
 }
+
+#[test]
+fn serve_reports_key_store_initialization_failure_after_storage_setup() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("keys"), b"keep").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        .arg("--storage-path")
+        .arg(dir.path())
+        .args(["serve", "--base-url", "http://localhost/"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!output.stderr.is_empty());
+    assert!(dir.path().join("uploads").is_dir());
+    assert_eq!(std::fs::read(dir.path().join("keys")).unwrap(), b"keep");
+}

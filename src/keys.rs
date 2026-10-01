@@ -148,6 +148,12 @@ mod tests {
         ] {
             fs::write(keys.directory.join(name), b"ignored").unwrap();
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let name = std::ffi::OsString::from_vec(b"\xff.json".to_vec());
+            fs::write(keys.directory.join(name), b"ignored").unwrap();
+        }
         assert_eq!(
             KeyStore::new(dir.path().to_path_buf())
                 .unwrap()

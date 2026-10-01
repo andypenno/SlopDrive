@@ -847,6 +847,11 @@ async fn mcp_argument_validation_applies_to_every_tool_and_field() {
         extra["typo"] = json!("unexpected");
         invalid_cases.push(extra);
         for field in valid.as_object().unwrap().keys() {
+            if field != "version_hash" {
+                let mut missing = valid.clone();
+                missing.as_object_mut().unwrap().remove(field);
+                invalid_cases.push(missing);
+            }
             for value in [json!(null), json!(false), json!(42), json!([]), json!({})] {
                 let mut invalid = valid.clone();
                 invalid[field] = value;
@@ -856,6 +861,7 @@ async fn mcp_argument_validation_applies_to_every_tool_and_field() {
         for arguments in invalid_cases {
             let (_, response) = fixture.mcp(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":arguments}})).await;
             assert_eq!(response["error"]["code"], -32602, "{name}: {response}");
+            assert!(response.get("result").is_none());
         }
     }
     assert_eq!(
@@ -892,5 +898,75 @@ async fn mcp_request_id_and_params_validation_accepts_and_rejects_json_types() {
             .await;
         assert_eq!(response["id"], "request");
         assert_eq!(response["error"]["code"], -32600);
+    }
+}
+
+#[tokio::test]
+async fn storage_write_and_read_failures_are_redacted_over_http_and_mcp() {
+    let fixture = TestApp::new();
+    let uploads = fixture.dir.path().join("uploads");
+    std::fs::rename(&uploads, fixture.dir.path().join("original-uploads")).unwrap();
+    std::fs::write(&uploads, b"keep").unwrap();
+    let (status, response) = fixture.post_html("/upload", b"<p>x</p>").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response, json!({"error":"internal error"}));
+    let response = fixture
+        .tool(1, "upload_html", json!({"content":"<p>x</p>"}))
+        .await;
+    assert_eq!(response["isError"], true);
+    assert_eq!(response["content"][0]["text"], "internal error");
+    assert_eq!(std::fs::read(&uploads).unwrap(), b"keep");
+
+    let fixture = TestApp::new();
+    let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
+    let id = saved["upload_id"].as_str().unwrap();
+    let path = fixture.dir.path().join("uploads").join(id);
+    let content_path = path.join(format!("{}.html", saved["content_hash"].as_str().unwrap()));
+    std::fs::rename(&content_path, path.join("original.html")).unwrap();
+    std::fs::create_dir(&content_path).unwrap();
+    let (status, response) = fixture
+        .json(request(
+            Method::GET,
+            &format!("/{id}"),
+            None,
+            None,
+            Body::empty(),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response, json!({"error":"internal error"}));
+    let response = fixture
+        .tool(2, "get_html_url", json!({"upload_id":id}))
+        .await;
+    assert_eq!(response["isError"], true);
+    assert_eq!(response["content"][0]["text"], "internal error");
+    assert_eq!(
+        std::fs::read(path.join("original.html")).unwrap(),
+        b"<p>original</p>"
+    );
+}
+
+#[tokio::test]
+async fn malformed_updates_preserve_latest_content_and_history() {
+    let fixture = TestApp::new();
+    let content = b"<p>original</p>";
+    let (_, saved) = fixture.post_html("/upload", content).await;
+    let id = saved["upload_id"].as_str().unwrap();
+    for fields in [
+        vec![("file", "text/html", &[0xff][..])],
+        vec![("file", "text/plain", content.as_slice())],
+    ] {
+        let (status, _) = fixture
+            .json(request(
+                Method::POST,
+                &format!("/upload/{id}"),
+                Some(&fixture.key),
+                Some("multipart/form-data; boundary=testboundary"),
+                multipart(&fields),
+            ))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(fixture.state.storage.get(id, None).unwrap(), content);
+        assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
     }
 }

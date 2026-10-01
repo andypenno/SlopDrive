@@ -464,4 +464,63 @@ mod tests {
             assert_eq!(error.to_string(), "original detail");
         }
     }
+
+    #[test]
+    fn failed_content_update_preserves_latest_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        let saved = store.create(b"<p>first</p>").unwrap();
+        let new_content = b"<p>second</p>";
+        let destination = store
+            .upload_path(&saved.upload_id)
+            .unwrap()
+            .join(format!("{}.html", hash(new_content)));
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("sentinel"), b"keep").unwrap();
+        assert!(matches!(
+            store.update(&saved.upload_id, new_content),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(store.get(&saved.upload_id, None).unwrap(), b"<p>first</p>");
+        let versions = store.versions(&saved.upload_id).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].content_hash, saved.version.content_hash);
+        assert_eq!(fs::read(destination.join("sentinel")).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn metadata_save_errors_and_content_read_errors_preserve_existing_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        let saved = store.create(b"<p>first</p>").unwrap();
+        let metadata = store.read_metadata(&saved.upload_id).unwrap();
+        assert!(matches!(
+            store.save_metadata("../outside", &metadata),
+            Err(StoreError::InvalidId)
+        ));
+        let path = store.upload_path(&saved.upload_id).unwrap();
+        let content_path = path.join(format!("{}.html", saved.version.content_hash));
+        fs::rename(&content_path, path.join("original.html")).unwrap();
+        fs::create_dir(&content_path).unwrap();
+        assert!(matches!(
+            store.get(&saved.upload_id, None),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(
+            fs::read(path.join("original.html")).unwrap(),
+            b"<p>first</p>"
+        );
+        let metadata_path = path.join("metadata.json");
+        fs::rename(&metadata_path, path.join("original.json")).unwrap();
+        fs::create_dir(&metadata_path).unwrap();
+        fs::write(metadata_path.join("sentinel"), b"keep").unwrap();
+        assert!(matches!(
+            store.save_metadata(&saved.upload_id, &metadata),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(fs::read(metadata_path.join("sentinel")).unwrap(), b"keep");
+        let original: Metadata =
+            serde_json::from_slice(&fs::read(path.join("original.json")).unwrap()).unwrap();
+        assert_eq!(original.latest, saved.version.content_hash);
+    }
 }
