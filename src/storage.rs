@@ -219,7 +219,7 @@ fn not_found(error: std::io::Error) -> StoreError {
 
 #[cfg(test)]
 mod tests {
-    use super::{FilesystemStorage, Storage};
+    use super::*;
     use std::sync::Arc;
 
     #[test]
@@ -230,6 +230,8 @@ mod tests {
         let second = store.update(&first.upload_id, b"<html>two</html>").unwrap();
         let retry = store.update(&first.upload_id, b"<html>two</html>").unwrap();
         assert_eq!(second.version.content_hash, retry.version.content_hash);
+        assert_eq!(second.version.created_at, retry.version.created_at);
+        assert_eq!(second.version.size_bytes, retry.version.size_bytes);
         drop(store);
         let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(store.versions(&first.upload_id).unwrap().len(), 2);
@@ -261,6 +263,205 @@ mod tests {
                 });
             }
         });
-        assert_eq!(store.versions(&first.upload_id).unwrap().len(), 9);
+        let versions = store.versions(&first.upload_id).unwrap();
+        let mut expected = vec![b"<html>initial</html>".to_vec()];
+        expected.extend((0..8).map(|n| format!("<html>{n}</html>").into_bytes()));
+        let actual: std::collections::BTreeSet<_> =
+            versions.iter().map(|v| v.content_hash.clone()).collect();
+        assert_eq!(actual, expected.iter().map(|bytes| hash(bytes)).collect());
+        assert_eq!(versions.len(), expected.len());
+        for bytes in expected {
+            assert_eq!(
+                store.get(&first.upload_id, Some(&hash(&bytes))).unwrap(),
+                bytes
+            );
+        }
+    }
+
+    #[test]
+    fn historical_revert_preserves_version_metadata_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        let first = store.create(b"<p>one</p>").unwrap();
+        store.update(&first.upload_id, b"<p>two</p>").unwrap();
+        let reverted = store.update(&first.upload_id, b"<p>one</p>").unwrap();
+        assert_eq!(reverted.version.content_hash, first.version.content_hash);
+        assert_eq!(reverted.version.created_at, first.version.created_at);
+        assert_eq!(reverted.version.size_bytes, first.version.size_bytes);
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(store.get(&first.upload_id, None).unwrap(), b"<p>one</p>");
+        assert_eq!(store.versions(&first.upload_id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn identifiers_hashes_and_known_sha256_vector() {
+        for id in [
+            "",
+            "../",
+            &"a".repeat(31),
+            &"a".repeat(33),
+            &"g".repeat(32),
+            &"é".repeat(16),
+        ] {
+            assert!(!valid_id(id), "{id}");
+        }
+        assert!(valid_id(&"aF".repeat(16)));
+        for value in [
+            "",
+            &"a".repeat(63),
+            &"a".repeat(65),
+            &"g".repeat(64),
+            &"é".repeat(32),
+        ] {
+            assert!(!valid_hash(value), "{value}");
+        }
+        assert!(valid_hash(&"aF".repeat(32)));
+        assert_eq!(
+            hash(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        for bytes in [0, 8, 16, 32] {
+            let value = random_hex(bytes).unwrap();
+            assert_eq!(value.len(), bytes * 2);
+            assert!(value.bytes().all(|b| b.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn invalid_and_missing_uploads_reject_every_storage_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        for id in ["../keys", "not-an-id"] {
+            assert!(matches!(store.update(id, b"x"), Err(StoreError::InvalidId)));
+            assert!(matches!(store.get(id, None), Err(StoreError::InvalidId)));
+            assert!(matches!(store.versions(id), Err(StoreError::InvalidId)));
+        }
+        let id = "0".repeat(32);
+        assert!(matches!(store.update(&id, b"x"), Err(StoreError::NotFound)));
+        assert!(matches!(store.get(&id, None), Err(StoreError::NotFound)));
+        assert!(matches!(store.versions(&id), Err(StoreError::NotFound)));
+    }
+
+    #[test]
+    fn corrupt_metadata_and_missing_content_return_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        let saved = store.create(b"<p>x</p>").unwrap();
+        let path = store.upload_path(&saved.upload_id).unwrap();
+        fs::rename(
+            path.join(format!("{}.html", saved.version.content_hash)),
+            path.join("hidden.html"),
+        )
+        .unwrap();
+        assert!(matches!(
+            store.get(&saved.upload_id, None),
+            Err(StoreError::NotFound)
+        ));
+        let mut metadata = store.read_metadata(&saved.upload_id).unwrap();
+        for latest in ["bad".to_owned(), "0".repeat(64)] {
+            metadata.latest = latest;
+            store.save_metadata(&saved.upload_id, &metadata).unwrap();
+            assert!(matches!(
+                store.get(&saved.upload_id, None),
+                Err(StoreError::NotFound)
+            ));
+        }
+        metadata.latest = saved.version.content_hash.clone();
+        metadata.versions.clear();
+        store.save_metadata(&saved.upload_id, &metadata).unwrap();
+        assert!(matches!(
+            store.update(&saved.upload_id, b"<p>x</p>"),
+            Err(StoreError::NotFound)
+        ));
+        fs::write(path.join("metadata.json"), b"not json").unwrap();
+        assert!(matches!(
+            store.get(&saved.upload_id, None),
+            Err(StoreError::Corrupt(_))
+        ));
+        assert!(matches!(
+            store.update(&saved.upload_id, b"x"),
+            Err(StoreError::Corrupt(_))
+        ));
+        assert!(matches!(
+            store.versions(&saved.upload_id),
+            Err(StoreError::Corrupt(_))
+        ));
+    }
+
+    #[test]
+    fn filesystem_failures_and_poisoned_lock_propagate() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("file");
+        fs::write(&blocker, b"existing").unwrap();
+        assert!(matches!(
+            FilesystemStorage::new(blocker),
+            Err(StoreError::Io(_))
+        ));
+        let store = FilesystemStorage::new(dir.path().to_path_buf()).unwrap();
+        fs::rename(dir.path().join("uploads"), dir.path().join("moved")).unwrap();
+        fs::write(dir.path().join("uploads"), b"blocker").unwrap();
+        assert!(matches!(store.create(b"x"), Err(StoreError::Io(_))));
+        assert!(matches!(
+            store.versions(&"0".repeat(32)),
+            Err(StoreError::Io(_))
+        ));
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = store.writes.lock().unwrap();
+            panic!("poison owned test lock");
+        });
+        assert!(matches!(store.create(b"x"), Err(StoreError::Locked)));
+        assert!(matches!(
+            store.update(&"0".repeat(32), b"x"),
+            Err(StoreError::Locked)
+        ));
+    }
+
+    #[test]
+    fn atomic_write_replaces_content_and_preserves_destination_on_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("content");
+        atomic_write(&path, b"first").unwrap();
+        atomic_write(&path, b"second").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let destination = dir.path().join("directory");
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("existing"), b"keep").unwrap();
+        assert!(matches!(
+            atomic_write(&destination, b"replacement"),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(fs::read(destination.join("existing")).unwrap(), b"keep");
+        assert!(matches!(
+            atomic_write(&dir.path().join("missing/content"), b"x"),
+            Err(StoreError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn shared_io_error_mapping_preserves_kind_and_message() {
+        use std::io::{Error, ErrorKind};
+        assert!(matches!(
+            not_found(Error::from(ErrorKind::NotFound)),
+            StoreError::NotFound
+        ));
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::InvalidInput,
+            ErrorKind::Other,
+        ] {
+            let StoreError::Io(error) = not_found(Error::new(kind, "original detail")) else {
+                panic!("non-missing errors must retain their cause");
+            };
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.to_string(), "original detail");
+        }
     }
 }
