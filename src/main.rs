@@ -160,26 +160,7 @@ async fn main() -> Result<()> {
                 keys: Arc::new(KeyStore::new(cli.storage_path)?),
                 base_url,
             };
-            let protected = Router::new()
-                .route(
-                    "/upload",
-                    post(create_upload).layer(DefaultBodyLimit::max(MAX_HTML_BYTES + 16 * 1024)),
-                )
-                .route(
-                    "/upload/{id}",
-                    post(update_upload).layer(DefaultBodyLimit::max(MAX_HTML_BYTES + 16 * 1024)),
-                )
-                .route("/upload/{id}/versions", get(list_versions_http))
-                .route(
-                    "/mcp",
-                    post(mcp::handle).layer(DefaultBodyLimit::max(6 * MAX_HTML_BYTES + 16 * 1024)),
-                )
-                .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard));
-            let app = Router::new()
-                .route("/", get(root))
-                .merge(protected)
-                .route("/{id}", get(get_html))
-                .with_state(state);
+            let app = router(state);
             let listener = tokio::net::TcpListener::bind(bind_addr)
                 .await
                 .context("bind failed")?;
@@ -188,6 +169,29 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn router(state: AppState) -> Router {
+    let protected = Router::new()
+        .route(
+            "/upload",
+            post(create_upload).layer(DefaultBodyLimit::max(MAX_HTML_BYTES + 16 * 1024)),
+        )
+        .route(
+            "/upload/{id}",
+            post(update_upload).layer(DefaultBodyLimit::max(MAX_HTML_BYTES + 16 * 1024)),
+        )
+        .route("/upload/{id}/versions", get(list_versions_http))
+        .route(
+            "/mcp",
+            post(mcp::handle).layer(DefaultBodyLimit::max(6 * MAX_HTML_BYTES + 16 * 1024)),
+        )
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard));
+    Router::new()
+        .route("/", get(root))
+        .merge(protected)
+        .route("/{id}", get(get_html))
+        .with_state(state)
 }
 
 async fn root() -> Html<&'static str> {
@@ -400,13 +404,4 @@ async fn get_html(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::validate_html;
-
-    #[test]
-    fn rejects_malformed_markup_without_rejecting_script_text() {
-        assert!(validate_html("<>").is_err());
-        assert!(validate_html("<html><").is_err());
-        assert!(validate_html("<html><script>const x = '<>';</script></html>").is_ok());
-    }
-}
+mod tests;

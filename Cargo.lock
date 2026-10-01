@@ -992,6 +992,7 @@ dependencies = [
  "thiserror",
  "tl",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "url",
