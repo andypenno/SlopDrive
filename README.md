@@ -66,3 +66,5 @@ The authenticated streamable HTTP MCP endpoint is `/mcp`. Configure an MCP clien
 ```
 
 Its tools are `upload_html`, `update_html`, `list_versions`, and `get_html_url`. There is no tool to enumerate pages. The Hermes skill is at `skills/slopbox/SKILL.md`; install that directory through your agent's skill loader and configure its MCP server name as `html_host` for the tool calls in the skill.
+
+Contributor conventions are in [docs/README.md](docs/README.md).
