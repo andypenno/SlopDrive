@@ -1,0 +1,205 @@
+{
+  "schema": 1,
+  "runs": 3,
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 268435456
+  },
+  "workload": {
+    "requests": 600,
+    "concurrency": 4,
+    "idle_seconds": 5
+  },
+  "image_limits": {
+    "standard": {
+      "compressed_bytes": 50000000,
+      "unpacked_bytes": 104857600
+    },
+    "alpine": {
+      "compressed_bytes": 10000000,
+      "unpacked_bytes": 16777216
+    }
+  },
+  "scenario_limits": {
+    "startup": {
+      "ready_ms": {
+        "max": 2000
+      }
+    },
+    "idle": {
+      "memory_bytes": {
+        "max": 33554432
+      },
+      "cpu_percent": {
+        "max": 1
+      }
+    },
+    "recovery": {
+      "memory_growth_bytes": {
+        "max": 83886080
+      }
+    },
+    "read": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 3
+      },
+      "p95_ms": {
+        "max": 100
+      },
+      "operations_per_second": {
+        "min": 300
+      }
+    },
+    "write": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 12
+      },
+      "p95_ms": {
+        "max": 100
+      },
+      "operations_per_second": {
+        "min": 70
+      }
+    },
+    "reject": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 4
+      },
+      "p95_ms": {
+        "max": 100
+      },
+      "operations_per_second": {
+        "min": 150
+      }
+    }
+  },
+  "reference": {
+    "maximum_ratio": 2,
+    "minimum_ratio": 0.5,
+    "profiles": {
+      "local": {
+        "standard": {
+          "read": {
+            "memory_bytes": 16146432,
+            "cpu_ms_per_op": 0.693948,
+            "p95_ms": 7.056037,
+            "operations_per_second": 1028.078315
+          },
+          "write": {
+            "memory_bytes": 61415424,
+            "cpu_ms_per_op": 3.37318,
+            "p95_ms": 24.566489,
+            "operations_per_second": 235.482835
+          },
+          "reject": {
+            "memory_bytes": 65818624,
+            "cpu_ms_per_op": 1.14748,
+            "p95_ms": 20.122522,
+            "operations_per_second": 315.752121
+          }
+        },
+        "alpine": {
+          "read": {
+            "memory_bytes": 14417920,
+            "cpu_ms_per_op": 1.3614,
+            "p95_ms": 11.337293,
+            "operations_per_second": 737.933797
+          },
+          "write": {
+            "memory_bytes": 56786944,
+            "cpu_ms_per_op": 6.199232,
+            "p95_ms": 42.093586,
+            "operations_per_second": 160.163139
+          },
+          "reject": {
+            "memory_bytes": 60895232,
+            "cpu_ms_per_op": 1.840018,
+            "p95_ms": 22.079697,
+            "operations_per_second": 334.789053
+          }
+        }
+      },
+      "ci": {
+        "standard": {
+          "read": {
+            "memory_bytes": 16146432,
+            "cpu_ms_per_op": 0.693948,
+            "p95_ms": 7.056037,
+            "operations_per_second": 1028.078315
+          },
+          "write": {
+            "memory_bytes": 61415424,
+            "cpu_ms_per_op": 3.37318,
+            "p95_ms": 24.566489,
+            "operations_per_second": 235.482835
+          },
+          "reject": {
+            "memory_bytes": 65818624,
+            "cpu_ms_per_op": 1.14748,
+            "p95_ms": 20.122522,
+            "operations_per_second": 315.752121
+          }
+        },
+        "alpine": {
+          "read": {
+            "memory_bytes": 14417920,
+            "cpu_ms_per_op": 1.3614,
+            "p95_ms": 11.337293,
+            "operations_per_second": 737.933797
+          },
+          "write": {
+            "memory_bytes": 56786944,
+            "cpu_ms_per_op": 6.199232,
+            "p95_ms": 42.093586,
+            "operations_per_second": 160.163139
+          },
+          "reject": {
+            "memory_bytes": 60895232,
+            "cpu_ms_per_op": 1.840018,
+            "p95_ms": 22.079697,
+            "operations_per_second": 334.789053
+          }
+        }
+      }
+    }
+  },
+  "calibration": {
+    "source_commit": "4c152e3d04bf8c3190c02d3e1686519393fdf65d",
+    "local": {
+      "standard": {
+        "image_digest": "sha256:23e658d76b436f1f893c30b4fbd639b7e9893ec4f17cf8bd1ab342240011ec21",
+        "harness_sha256": "66c4d5e719a749165c767079ac0128fb885f03849909377623de2075617c4edb",
+        "host": {
+          "kernel": "6.17.0-40-generic",
+          "machine": "x86_64",
+          "engine": "podman version 4.9.3",
+          "cpu": "13th Gen Intel(R) Core(TM) i7-1365U",
+          "logical_cpus": 12
+        },
+        "repetitions": 5
+      },
+      "alpine": {
+        "image_digest": "sha256:6f2b2202f61aece2af5803a5ddf48f50d1ae5c358be14d60d8337bb9df1e0646",
+        "harness_sha256": "e1536a2877409d08065bc9f0bb2b26b67737058e469452fe6ad205c004133901",
+        "host": {
+          "kernel": "6.17.0-40-generic",
+          "machine": "x86_64",
+          "engine": "podman version 4.9.3",
+          "cpu": "13th Gen Intel(R) Core(TM) i7-1365U",
+          "logical_cpus": 12
+        },
+        "repetitions": 5
+      }
+    },
+    "ci": "provisional until measured on the PR runner"
+  }
+}

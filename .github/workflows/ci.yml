@@ -34,6 +34,10 @@ jobs:
         run: node tests/homepage.cjs
       - name: Release policy checks
         run: python3 tests/releases.py
+      - name: Performance measurement checks
+        run: |
+          python3 tests/performance.py
+          python3 tests/benchmark.py
 
   containers:
     name: Container checks
