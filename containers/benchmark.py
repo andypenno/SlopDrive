@@ -324,8 +324,7 @@ def run_sample(engine, image, policy):
         if not state.get("Running") or state.get("OOMKilled"):
             raise RuntimeError("container stopped or was OOM-killed")
         command(engine, "restart", "--time", "5", name)
-        port = command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1]
-        base = "http://127.0.0.1:" + port
+        base = container_endpoint(engine, name, network)
         ready(base, time.monotonic() + 15)
         for saved, content in writes:
             status, _, body = request(base, "/" + saved["upload_id"] + "?q=" + saved["content_hash"])

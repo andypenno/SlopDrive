@@ -1,4 +1,5 @@
 import importlib.util
+import contextlib
 import io
 import json
 import math
@@ -107,6 +108,38 @@ def check_container_endpoint():
             rejects(benchmark.container_endpoint, "podman", "owned-container", "owned-network")
 
 
+def check_restart_endpoint():
+    saved = {"upload_id": "page", "content_hash": "hash"}
+    address = "172.19.0.2"
+
+    def command(engine, operation, *args):
+        nonlocal address
+        if operation == "port":
+            raise RuntimeError("no published port on internal Docker network")
+        if operation == "restart":
+            address = "172.19.0.3"
+        if operation == "inspect":
+            return json.dumps([{"State": {"Running": True}, "NetworkSettings": {"Networks": {args[0] + "-network": {"IPAddress": address}}}}])
+        return "id key"
+
+    replacements = {
+        "command": command, "isolated_network": lambda *_: None,
+        "cgroup_path": lambda *_: Path("unused"), "counters": lambda *_: (1, 1),
+        "memory_samples": lambda *_: contextlib.nullcontext([1]), "cpu_percent": lambda *_: 0,
+        "page": lambda *_: "content", "upload": lambda *_: saved, "verify_hash": lambda *_: None,
+        "rpc": lambda _, __, name, ___: {"versions": [saved]} if name == "list_versions" else saved,
+        "workload": lambda *_: {},
+    }
+    with contextlib.ExitStack() as stack:
+        for name, replacement in replacements.items():
+            stack.enter_context(patch.object(benchmark, name, replacement))
+        stack.enter_context(patch.object(benchmark.time, "sleep"))
+        stack.enter_context(patch.object(benchmark.subprocess, "run"))
+        ready = stack.enter_context(patch.object(benchmark, "ready"))
+        benchmark.run_sample("docker", "image", {"resources": {"cpus": 1, "memory_bytes": 256000000}, "workload": {"idle_seconds": 5}})
+        assert [call.args[0] for call in ready.call_args_list] == ["http://172.19.0.2:3000", "http://172.19.0.3:3000"]
+
+
 def check_network_constraints():
     for engine, field in (("docker", "Internal"), ("podman", "internal")):
         with patch.object(benchmark, "command", side_effect=["owned-network", json.dumps([{field: True}])]) as command:
@@ -124,5 +157,6 @@ if __name__ == "__main__":
     check_response_correctness()
     check_response_bound()
     check_container_endpoint()
+    check_restart_endpoint()
     check_network_constraints()
     print("Cgroup counters, CPU intervals, and latency distributions checked")
