@@ -252,6 +252,7 @@ def run_sample(engine, image, policy):
         for size in (1024, 65536, 1048576):
             content = page(size, 0)
             pages.append((upload(base, key, content), content))
+        pinned_pages = pages.copy()
         history_id = pages[1][0]["upload_id"]
         versions = {pages[1][0]["content_hash"]}
         for index in range(1, 100):
@@ -271,7 +272,8 @@ def run_sample(engine, image, policy):
         result["idle"] = {"memory_bytes": max(samples), "cpu_percent": cpu_percent(before, after, time.monotonic() - start)}
 
         def read(index):
-            saved, expected = pages[index % len(pages)]
+            selected = pinned_pages if index % 2 else pages
+            saved, expected = selected[index % len(selected)]
             path = "/" + saved["upload_id"]
             if index % 2:
                 path += "?q=" + saved["content_hash"]

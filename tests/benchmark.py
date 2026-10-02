@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import hashlib
 import io
 import json
 import math
@@ -108,9 +109,29 @@ def check_container_endpoint():
             rejects(benchmark.container_endpoint, "podman", "owned-container", "owned-network")
 
 
-def check_restart_endpoint():
-    saved = {"upload_id": "page", "content_hash": "hash"}
+@contextlib.contextmanager
+def sample_environment():
+    pages = {}
+    requests = []
     address = "172.19.0.2"
+
+    def store(content, upload_id=None):
+        upload_id = upload_id or "page" + str(len(pages))
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        pages.setdefault(upload_id, {})[digest] = content
+        return {"upload_id": upload_id, "content_hash": digest}
+
+    def rpc(_, __, name, arguments):
+        if name == "list_versions":
+            return {"versions": [{"content_hash": digest} for digest in pages[arguments["upload_id"]]]}
+        return store(arguments["content"], arguments.get("upload_id"))
+
+    def request(_, path):
+        requests.append(path)
+        upload_id, _, digest = path[1:].partition("?q=")
+        versions = pages[upload_id]
+        content = versions[digest or next(reversed(versions))]
+        return 200, {"Content-Security-Policy": "sandbox"}, content.encode()
 
     def command(engine, operation, *args):
         nonlocal address
@@ -126,18 +147,44 @@ def check_restart_endpoint():
         "command": command, "isolated_network": lambda *_: None,
         "cgroup_path": lambda *_: Path("unused"), "counters": lambda *_: (1, 1),
         "memory_samples": lambda *_: contextlib.nullcontext([1]), "cpu_percent": lambda *_: 0,
-        "page": lambda *_: "content", "upload": lambda *_: saved, "verify_hash": lambda *_: None,
-        "rpc": lambda _, __, name, ___: {"versions": [saved]} if name == "list_versions" else saved,
-        "workload": lambda *_: {},
+        "upload": lambda _, __, content: store(content), "rpc": rpc, "request": request,
     }
     with contextlib.ExitStack() as stack:
         for name, replacement in replacements.items():
             stack.enter_context(patch.object(benchmark, name, replacement))
         stack.enter_context(patch.object(benchmark.time, "sleep"))
-        stack.enter_context(patch.object(benchmark.subprocess, "run"))
+        cleanup = stack.enter_context(patch.object(benchmark.subprocess, "run"))
         ready = stack.enter_context(patch.object(benchmark, "ready"))
-        benchmark.run_sample("docker", "image", {"resources": {"cpus": 1, "memory_bytes": 256000000}, "workload": {"idle_seconds": 5}})
-        assert [call.args[0] for call in ready.call_args_list] == ["http://172.19.0.2:3000", "http://172.19.0.3:3000"]
+        workload = stack.enter_context(patch.object(benchmark, "workload", return_value={}))
+        yield {"ready": ready, "cleanup": cleanup, "workload": workload, "requests": requests, "pages": pages}
+
+
+SAMPLE_POLICY = {"resources": {"cpus": 1, "memory_bytes": 256000000}, "workload": {"idle_seconds": 5}}
+
+
+def check_restart_endpoint():
+    with sample_environment() as environment:
+        benchmark.run_sample("docker", "image", SAMPLE_POLICY)
+        assert [call.args[0] for call in environment["ready"].call_args_list] == ["http://172.19.0.2:3000", "http://172.19.0.3:3000"]
+
+
+def check_read_versions():
+    with sample_environment() as environment:
+        def workload(_, operation, __):
+            if operation.__name__ == "read":
+                for index in range(6):
+                    operation(index)
+            return {}
+
+        environment["workload"].side_effect = workload
+        benchmark.run_sample("docker", "image", SAMPLE_POLICY)
+        versions = environment["pages"]["page1"]
+        original = next(iter(versions))
+        latest = next(reversed(versions))
+        assert original != latest
+        assert "/page1?q=" + original in environment["requests"]
+        assert "/page1" in environment["requests"]
+        assert "/page1?q=" + latest not in environment["requests"]
 
 
 def check_network_constraints():
@@ -158,5 +205,6 @@ if __name__ == "__main__":
     check_response_bound()
     check_container_endpoint()
     check_restart_endpoint()
+    check_read_versions()
     check_network_constraints()
     print("Cgroup counters, CPU intervals, and latency distributions checked")
