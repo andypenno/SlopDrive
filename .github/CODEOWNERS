@@ -1,0 +1,6 @@
+# Gate changes require owner approval when branch protection is enabled.
+/.github/ @andypenno
+/containers/ @andypenno
+/tests/performance.py @andypenno
+/tests/benchmark.py @andypenno
+/docs/performance.md @andypenno

@@ -24,7 +24,7 @@ The reusable [container workflow](../.github/workflows/containers.yml) handles b
 
 The standard variant uses Debian slim and glibc. Alpine builds its own musl binary and uses an Alpine runtime. Both keep UID/GID 10001, `/data`, port 3000, the CLI, and the same environment variables. Keep both Rust builder versions aligned with CI.
 
-CI runs formatting, Clippy with warnings denied, locked Rust tests, homepage checks, and release-policy checks. It exports each image once as an OCI archive with provenance and an SBOM. Docker and Podman exercise those archives for HTTP, MCP, authentication, non-root execution, persistence, and switching between variants. Only after every check passes can CI copy the archives to GHCR while preserving their digests.
+CI runs formatting, Clippy with warnings denied, locked Rust tests, homepage checks, release-policy checks, and [performance budgets](performance.md). It exports each image once as an OCI archive with provenance and an SBOM. Docker and Podman exercise those archives for HTTP, MCP, authentication, non-root execution, persistence, and switching between variants. Only after every check passes can CI copy the archives to GHCR while preserving their digests.
 
 Publication is serialized across branch and version workflows. Before moving a branch channel, the helper checks that the source commit is still the branch head. PRs and merge queues run the same build and runtime checks without publishing credentials. Failed checks publish no images. Keep generated logs in gitignored `test-output/`; image artifacts contain no service data or API keys.
 
@@ -44,7 +44,7 @@ Back up data before upgrading. Switching variants within one release preserves t
 
 ## Repository and package settings
 
-Require PRs into `dev` and `main`, the Rust checks, both image builds, and both container-engine tests. The workflow also handles `merge_group` for merge queues. Restrict release-tag creation and deletion through a ruleset; never move an existing release tag. Keep actions pinned to reviewed SHAs and checkout credentials disabled. Dependabot tracks actions, Rust dependencies, and container base images.
+Require PRs into `dev` and `main`, the Rust checks, both image builds, both container-engine tests, and performance budgets. The workflow also handles `merge_group` for merge queues. Restrict release-tag creation and deletion through a ruleset; never move an existing release tag. Keep actions pinned to reviewed SHAs and checkout credentials disabled. Dependabot tracks actions, Rust dependencies, and container base images.
 
 Publishing uses job-scoped `GITHUB_TOKEN` permissions and is limited to `andypenno/SlopBox`. No personal access token is needed for CI publication. Repository protection and package visibility require administrator settings; editing the workflow does not apply them.
 

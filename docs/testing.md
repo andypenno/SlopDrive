@@ -6,6 +6,8 @@ Run `node tests/homepage.cjs` for homepage clipboard behavior. This dependency-f
 
 Run `python3 tests/releases.py` for version validation, immutable image promotion, and channel ordering. Run `python3 tests/compose.py docker compose` for image selection and deployment settings. Container CI tests both exported image variants with Docker and Podman, including switching a populated data volume between variants.
 
+Run `python3 tests/performance.py` and `python3 tests/benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
+
 Use real routers and temporary stores for transport tests. Test successful requests, malformed inputs, exact size boundaries, missing data, retries, historical versions, and failure redaction. Paired HTTP and MCP checks must exercise the same shared behavior. Inspect complete version sets and retrieve their bytes when testing concurrency.
 
 Keep private-state unit checks attached to their owning module with `cfg(test)` and a path into the test directory. Integration executables are explicit Cargo test targets; add a target when adding one. Disabling automatic integration discovery prevents private unit modules from being compiled a second time as standalone crates. Keep fixture construction in test-only helpers rather than exposing production internals.
