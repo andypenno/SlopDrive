@@ -1,5 +1,12 @@
 # SlopBox
 
+[![Main CI](https://github.com/andypenno/SlopBox/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/andypenno/SlopBox/actions/workflows/ci.yml?query=branch%3Amain)
+[![Dev CI](https://github.com/andypenno/SlopBox/actions/workflows/ci.yml/badge.svg?branch=dev&event=push)](https://github.com/andypenno/SlopBox/actions/workflows/ci.yml?query=branch%3Adev)
+[![Release promotion](https://github.com/andypenno/SlopBox/actions/workflows/release.yml/badge.svg)](https://github.com/andypenno/SlopBox/actions/workflows/release.yml)
+[![Latest version](https://img.shields.io/github/v/tag/andypenno/SlopBox?filter=v*&sort=semver&label=version)](https://github.com/andypenno/SlopBox/tags)
+[![Standard container](https://img.shields.io/badge/GHCR-stable-blue)](https://github.com/andypenno/SlopBox/pkgs/container/slopbox)
+[![Alpine container](https://img.shields.io/badge/GHCR-stable--alpine-blue)](https://github.com/andypenno/SlopBox/pkgs/container/slopbox)
+
 SlopBox lets you publish self-contained HTML pages and share them with a link. The same link shows later updates. Anyone with the link can view a page; publishing requires an API key.
 
 Published HTML is untrusted. Pages run in a browser sandbox that permits scripts but gives each document an opaque origin. localStorage and IndexedDB are unavailable, and requests that depend on same-origin access need explicit CORS support. Keep interactive state in memory or offer file import and export.
