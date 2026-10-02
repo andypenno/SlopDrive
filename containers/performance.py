@@ -25,7 +25,7 @@ def policy_hash(policy):
 
 
 def validate_policy(policy):
-    if policy.get("schema") != 1 or type(policy.get("runs")) is not int or not 1 <= policy["runs"] <= 10:
+    if type(policy.get("schema")) is not int or policy["schema"] != 1 or type(policy.get("runs")) is not int or not 1 <= policy["runs"] <= 10:
         raise ValueError("invalid performance policy schema or run count")
     if set(policy.get("scenario_limits", {})) != set(SCENARIOS):
         raise ValueError("policy must cover every required scenario")
@@ -54,17 +54,40 @@ def validate_policy(policy):
             raise ValueError("invalid workload: " + field)
     if workload["requests"] < 100 or workload["concurrency"] > workload["requests"]:
         raise ValueError("insufficient workload samples")
+    reference = policy.get("reference", {})
+    if not 1 <= number(reference.get("maximum_ratio"), "maximum_ratio") <= 3:
+        raise ValueError("invalid maximum regression ratio")
+    if not 0 < number(reference.get("minimum_ratio"), "minimum_ratio") <= 1:
+        raise ValueError("invalid minimum regression ratio")
+    profiles = reference.get("profiles", {})
+    if set(profiles) != {"local", "ci"}:
+        raise ValueError("both runner profiles need approved references")
+    for variants in profiles.values():
+        if set(variants) != {"standard", "alpine"}:
+            raise ValueError("both variants need approved references")
+        for scenarios in variants.values():
+            if set(scenarios) != {"read", "write", "reject"}:
+                raise ValueError("missing reference scenario")
+            for scenario, metrics in scenarios.items():
+                if set(metrics) != set(SCENARIOS[scenario]):
+                    raise ValueError("missing reference metric")
+                for metric, value in metrics.items():
+                    if number(value, metric) <= 0:
+                        raise ValueError("reference measurements must be positive")
 
 
 def evaluate(policy, report):
     validate_policy(policy)
-    if report.get("schema") != 1 or report.get("complete") is not True:
+    if type(report.get("schema")) is not int or report["schema"] != 1 or report.get("complete") is not True or report.get("diagnostic") is True:
         raise ValueError("incomplete performance report")
     if report.get("policy_sha256") != policy_hash(policy):
         raise ValueError("report was measured against another policy")
     variant = report.get("variant")
     if variant not in policy["image_limits"]:
         raise ValueError("unknown image variant")
+    profile = report.get("profile")
+    if profile not in policy["reference"]["profiles"]:
+        raise ValueError("unknown runner profile")
     image = report.get("image", {})
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image.get("digest", "")):
         raise ValueError("missing immutable image identity")
@@ -93,6 +116,12 @@ def evaluate(policy, report):
                 bound = policy["scenario_limits"][scenario][metric][direction]
                 if (direction == "max" and value > bound) or (direction == "min" and value < bound):
                     failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates {direction} {bound}")
+                if scenario in ("read", "write", "reject"):
+                    reference = policy["reference"]
+                    baseline = reference["profiles"][profile][variant][scenario][metric]
+                    ratio = reference["maximum_ratio"] if direction == "max" else reference["minimum_ratio"]
+                    if (direction == "max" and value > baseline * ratio) or (direction == "min" and value < baseline * ratio):
+                        failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates fixed {profile}/{variant} reference {baseline} at ratio {ratio}")
     if failures:
         raise ValueError("\n".join(failures))
 
@@ -148,4 +177,4 @@ def oci_size(path):
                 raise ValueError("unexpected runtime layer type")
             blob(layer)
             layers[layer["digest"]] = layer["size"]
-        return digest, sum(layers.values())
+        return {"digest": digest, "compressed_bytes": sum(layers.values()), "config_digest": manifest["config"]["digest"]}

@@ -43,12 +43,18 @@ def policy_and_report():
         "image_limits": {v: {"compressed_bytes": 1000, "unpacked_bytes": 2000} for v in ("standard", "alpine")},
         "scenario_limits": limits,
     }
+    baseline = {scenario: {metric: bound.get("max", bound.get("min")) for metric, bound in limits[scenario].items()} for scenario in ("read", "write", "reject")}
+    policy["reference"] = {
+        "maximum_ratio": 2, "minimum_ratio": 0.5,
+        "profiles": {profile: {variant: copy.deepcopy(baseline) for variant in ("standard", "alpine")} for profile in ("local", "ci")},
+    }
     sample = {name: {metric: 0 if "max" in bound else bound["min"] for metric, bound in metrics.items()} for name, metrics in limits.items()}
     for scenario in ("read", "write", "reject"):
         sample[scenario].update(completed=100, errors=0)
     report = {
         "schema": 1,
         "variant": "standard",
+        "profile": "local",
         "policy_sha256": performance.policy_hash(policy),
         "complete": True,
         "image": {"digest": "sha256:" + "a" * 64, "compressed_bytes": 1000, "unpacked_bytes": 2000},
@@ -84,7 +90,7 @@ def check_budgets():
 
 def check_incomplete_and_policy_tampering():
     policy, report = policy_and_report()
-    for field, invalid in (("complete", False), ("schema", 2), ("variant", "unknown"), ("policy_sha256", "0" * 64)):
+    for field, invalid in (("complete", False), ("diagnostic", True), ("schema", True), ("schema", 2), ("variant", "unknown"), ("policy_sha256", "0" * 64)):
         changed = copy.deepcopy(report)
         changed[field] = invalid
         rejects(performance.evaluate, policy, changed)
@@ -103,6 +109,20 @@ def check_incomplete_and_policy_tampering():
         changed = copy.deepcopy(policy)
         del changed["scenario_limits"][scenario]
         rejects(performance.evaluate, changed, report)
+
+
+def check_fixed_reference():
+    policy, report = policy_and_report()
+    policy["reference"]["profiles"]["local"]["standard"]["read"]["cpu_ms_per_op"] = 1
+    report["policy_sha256"] = performance.policy_hash(policy)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 2
+    performance.evaluate(policy, report)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 2.01
+    rejects(performance.evaluate, policy, report)
+    report["profile"] = "unknown"
+    rejects(performance.evaluate, policy, report)
+    del policy["reference"]
+    rejects(performance.evaluate, policy, report)
 
 
 def check_oci_size():
@@ -133,8 +153,8 @@ def check_oci_size():
                     archive.addfile(member, io.BytesIO(data))
 
         write_archive()
-        digest, size = performance.oci_size(archive_path)
-        assert digest == manifest["digest"] and size == len(layer)
+        metadata = performance.oci_size(archive_path)
+        assert metadata == {"digest": manifest["digest"], "compressed_bytes": len(layer), "config_digest": config["digest"]}
         blobs["blobs/sha256/" + layer_descriptor["digest"][7:]] = b"forged layer!"
         write_archive()
         rejects(performance.oci_size, archive_path)
@@ -143,5 +163,6 @@ def check_oci_size():
 if __name__ == "__main__":
     check_budgets()
     check_incomplete_and_policy_tampering()
+    check_fixed_reference()
     check_oci_size()
     print("Performance budgets, incomplete results, policy identity, and OCI sizes checked")
