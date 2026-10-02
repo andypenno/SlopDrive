@@ -334,9 +334,16 @@ def run_sample(engine, image, policy):
                 raise RuntimeError("acknowledged write did not survive restart")
         return result
     finally:
-        subprocess.run([engine, "rm", "-f", name], capture_output=True, timeout=30)
-        subprocess.run([engine, "volume", "rm", volume], capture_output=True, timeout=30)
-        subprocess.run([engine, "network", "rm", network], capture_output=True, timeout=30)
+        cleanup_errors = []
+        for args in ([engine, "rm", "-f", name], [engine, "volume", "rm", volume], [engine, "network", "rm", network]):
+            try:
+                result = subprocess.run(args, capture_output=True, timeout=30)
+                if result.returncode:
+                    cleanup_errors.append(" ".join(args) + ": " + result.stderr.decode(errors="replace").strip())
+            except (OSError, subprocess.TimeoutExpired) as error:
+                cleanup_errors.append(str(error))
+        if cleanup_errors:
+            raise RuntimeError("container cleanup failed: " + "; ".join(cleanup_errors))
 
 
 def main():

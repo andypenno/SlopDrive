@@ -154,6 +154,7 @@ def sample_environment():
             stack.enter_context(patch.object(benchmark, name, replacement))
         stack.enter_context(patch.object(benchmark.time, "sleep"))
         cleanup = stack.enter_context(patch.object(benchmark.subprocess, "run"))
+        cleanup.return_value.returncode = 0
         ready = stack.enter_context(patch.object(benchmark, "ready"))
         workload = stack.enter_context(patch.object(benchmark, "workload", return_value={}))
         yield {"ready": ready, "cleanup": cleanup, "workload": workload, "requests": requests, "pages": pages}
@@ -197,6 +198,38 @@ def check_network_constraints():
                 rejects(benchmark.isolated_network, engine, "owned-network")
 
 
+def check_cleanup():
+    name = "slopbox-perf-cleanup-check"
+    expected = [
+        ["docker", "rm", "-f", name],
+        ["docker", "volume", "rm", name + "-data"],
+        ["docker", "network", "rm", name + "-network"],
+    ]
+    for phase, failure in ((None, None), ("ready", RuntimeError("setup failed")), ("workload", RuntimeError("workload failed")), ("workload", KeyboardInterrupt())):
+        with sample_environment() as environment, patch.object(benchmark.uuid, "uuid4") as identifier:
+            identifier.return_value.hex = "cleanup-check"
+            if phase:
+                environment[phase].side_effect = failure
+            try:
+                benchmark.run_sample("docker", "image", SAMPLE_POLICY)
+                assert failure is None
+            except (RuntimeError, KeyboardInterrupt) as error:
+                assert error is failure
+            assert [call.args[0] for call in environment["cleanup"].call_args_list] == expected
+    for failure in (benchmark.subprocess.CompletedProcess([], 1, stderr=b"removal denied"), benchmark.subprocess.TimeoutExpired("docker rm", 30), PermissionError("engine unavailable")):
+        with sample_environment() as environment, patch.object(benchmark.uuid, "uuid4") as identifier:
+            identifier.return_value.hex = "cleanup-check"
+            success = benchmark.subprocess.CompletedProcess([], 0)
+            environment["cleanup"].side_effect = [failure, success, success]
+            try:
+                benchmark.run_sample("docker", "image", SAMPLE_POLICY)
+            except RuntimeError as error:
+                assert "cleanup failed" in str(error)
+            else:
+                raise AssertionError("cleanup failure was ignored")
+            assert [call.args[0] for call in environment["cleanup"].call_args_list] == expected
+
+
 if __name__ == "__main__":
     check_cgroup_measurements()
     check_statistics()
@@ -207,4 +240,5 @@ if __name__ == "__main__":
     check_restart_endpoint()
     check_read_versions()
     check_network_constraints()
+    check_cleanup()
     print("Cgroup counters, CPU intervals, and latency distributions checked")
