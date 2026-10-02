@@ -12,6 +12,7 @@ SCENARIOS = {
     "recovery": {"memory_growth_bytes": "max"},
     **{name: {"memory_bytes": "max", "cpu_ms_per_op": "max", "p95_ms": "max", "operations_per_second": "min"} for name in ("read", "write", "reject")},
 }
+REFERENCE_METRICS = {"cpu_ms_per_op", "operations_per_second"}
 
 
 def number(value, name):
@@ -69,7 +70,7 @@ def validate_policy(policy):
             if set(scenarios) != {"read", "write", "reject"}:
                 raise ValueError("missing reference scenario")
             for scenario, metrics in scenarios.items():
-                if set(metrics) != set(SCENARIOS[scenario]):
+                if set(metrics) != REFERENCE_METRICS:
                     raise ValueError("missing reference metric")
                 for metric, value in metrics.items():
                     if number(value, metric) <= 0:
@@ -116,7 +117,7 @@ def evaluate(policy, report):
                 bound = policy["scenario_limits"][scenario][metric][direction]
                 if (direction == "max" and value > bound) or (direction == "min" and value < bound):
                     failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates {direction} {bound}")
-                if scenario in ("read", "write", "reject"):
+                if scenario in ("read", "write", "reject") and metric in REFERENCE_METRICS:
                     reference = policy["reference"]
                     baseline = reference["profiles"][profile][variant][scenario][metric]
                     ratio = reference["maximum_ratio"] if direction == "max" else reference["minimum_ratio"]

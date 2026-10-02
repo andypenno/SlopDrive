@@ -42,13 +42,15 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Verified write operations | p95 <= 100 ms, CPU <= 12 ms/op, throughput >= 70 op/s |
 | Rejection operations | p95 <= 100 ms, CPU <= 4 ms/op, throughput >= 150 op/s |
 
-In addition, CPU, latency, and memory cannot exceed twice the fixed profile/variant reference, and throughput cannot fall below half its reference. CI and local references are separate. References never advance automatically with a PR or a moving image tag.
+In addition, CPU cost cannot exceed twice the fixed profile/variant reference, and throughput cannot fall below half its reference. CI and local references are separate. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
 
 MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
 
-Initial local calibration used five repetitions per variant. Compressed runtime layers measured about 30.4 MiB for standard and 5.4 MiB for Alpine. Write p95 maxima were about 25 ms and 45 ms respectively. The policy records the reference commit, image digests, hosts, and median measurements. Hosted-runner references must be calibrated separately before this PR is approved.
+Initial local calibration used five repetitions per variant. Compressed runtime layers measured about 30.4 MiB for standard and 5.4 MiB for Alpine. Write p95 maxima were about 25 ms and 45 ms respectively. The first successful PR run supplied three separate hosted-runner repetitions per variant. The policy records the reference commit, image digests, hosts, run ID, and median measurements.
 
 Compressed size covers unique runtime layers for Linux amd64, excluding SBOMs, attestations, and archive overhead. Memory covers the whole cgroup, including filesystem cache. Busy memory uses the cumulative cgroup peak, so an earlier workload's peak remains visible. Recovery bounds retained growth; it does not prove absence of leaks. Latency is client-side verified operation latency under a closed-loop workload, not a claim about maximum sustainable traffic.
+
+The service runs on an internal container network with only its measured port published on localhost. CI verifies the source revision label and the loaded image's configuration digest against the OCI artifact.
 
 ## Owner control and activation
 

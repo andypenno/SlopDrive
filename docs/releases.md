@@ -44,7 +44,7 @@ Back up data before upgrading. Switching variants within one release preserves t
 
 ## Repository and package settings
 
-Require PRs into `dev` and `main`, the Rust checks, both image builds, and both container-engine tests. The workflow also handles `merge_group` for merge queues. Restrict release-tag creation and deletion through a ruleset; never move an existing release tag. Keep actions pinned to reviewed SHAs and checkout credentials disabled. Dependabot tracks actions, Rust dependencies, and container base images.
+Require PRs into `dev` and `main`, the Rust checks, both image builds, both container-engine tests, and performance budgets. The workflow also handles `merge_group` for merge queues. Restrict release-tag creation and deletion through a ruleset; never move an existing release tag. Keep actions pinned to reviewed SHAs and checkout credentials disabled. Dependabot tracks actions, Rust dependencies, and container base images.
 
 Publishing uses job-scoped `GITHUB_TOKEN` permissions and is limited to `andypenno/SlopBox`. No personal access token is needed for CI publication. Repository protection and package visibility require administrator settings; editing the workflow does not apply them.
 

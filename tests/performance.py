@@ -43,7 +43,7 @@ def policy_and_report():
         "image_limits": {v: {"compressed_bytes": 1000, "unpacked_bytes": 2000} for v in ("standard", "alpine")},
         "scenario_limits": limits,
     }
-    baseline = {scenario: {metric: bound.get("max", bound.get("min")) for metric, bound in limits[scenario].items()} for scenario in ("read", "write", "reject")}
+    baseline = {scenario: {metric: bound.get("max", bound.get("min")) for metric, bound in limits[scenario].items() if metric in ("cpu_ms_per_op", "operations_per_second")} for scenario in ("read", "write", "reject")}
     policy["reference"] = {
         "maximum_ratio": 2, "minimum_ratio": 0.5,
         "profiles": {profile: {variant: copy.deepcopy(baseline) for variant in ("standard", "alpine")} for profile in ("local", "ci")},
@@ -118,6 +118,14 @@ def check_fixed_reference():
     report["samples"][0]["read"]["cpu_ms_per_op"] = 2
     performance.evaluate(policy, report)
     report["samples"][0]["read"]["cpu_ms_per_op"] = 2.01
+    rejects(performance.evaluate, policy, report)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 1
+    policy["reference"]["profiles"]["local"]["standard"]["read"]["operations_per_second"] = 40
+    report["policy_sha256"] = performance.policy_hash(policy)
+    for sample in report["samples"]:
+        sample["read"]["operations_per_second"] = 20
+    performance.evaluate(policy, report)
+    report["samples"][0]["read"]["operations_per_second"] = 19.9
     rejects(performance.evaluate, policy, report)
     report["profile"] = "unknown"
     rejects(performance.evaluate, policy, report)
