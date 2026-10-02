@@ -1,0 +1,99 @@
+name: Shared container workflow
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            file: containers/Containerfile
+          - variant: alpine
+            file: containers/Containerfile.alpine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Package version
+        id: package
+        run: echo "version=$(python3 containers/release.py version)" >> "$GITHUB_OUTPUT"
+      - name: Export image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          tags: slopbox:ci
+          outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.variant }}.tar
+          labels: |
+            org.opencontainers.image.source=https://github.com/andypenno/SlopBox
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.package.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.variant }}
+          path: ${{ runner.temp }}/${{ matrix.variant }}.tar
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  test:
+    name: Test (${{ matrix.engine }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [docker, podman]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/images
+      - name: Install image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo podman
+      - name: Load tested image
+        env:
+          ENGINE: ${{ matrix.engine }}
+          ARCHIVES: ${{ runner.temp }}/images
+        run: |
+          for variant in standard alpine; do
+            if [ "$ENGINE" = docker ]; then
+              skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
+            else
+              # Hosted Ubuntu restricts unprivileged user namespaces.
+              sudo skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "containers-storage:slopbox:$variant"
+            fi
+          done
+      - name: Service and persistence checks
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          if [ "$ENGINE" = podman ]; then
+            sudo python3 tests/container_smoke.py --engine podman --image slopbox:standard --other-image slopbox:alpine
+            sudo python3 tests/container_smoke.py --engine podman --image slopbox:alpine
+          else
+            python3 tests/container_smoke.py --engine docker --image slopbox:standard --other-image slopbox:alpine
+            python3 tests/container_smoke.py --engine docker --image slopbox:alpine
+          fi
+      - name: Compose configuration
+        run: python3 tests/compose.py docker compose

@@ -1,0 +1,18 @@
+FROM rust:1.98-alpine3.23 AS build
+WORKDIR /src
+RUN apk add --no-cache musl-dev
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY static ./static
+RUN cargo build --release --locked && strip /src/target/release/slopbox
+
+FROM alpine:3.23
+RUN addgroup -g 10001 slopbox && adduser -D -H -u 10001 -G slopbox slopbox \
+    && mkdir /data && chown slopbox:slopbox /data
+COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox
+USER 10001:10001
+VOLUME /data
+EXPOSE 3000
+ENV STORAGE_PATH=/data BIND_ADDR=0.0.0.0:3000
+ENTRYPOINT ["/usr/local/bin/slopbox"]
+CMD ["serve"]
