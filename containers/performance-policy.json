@@ -13,22 +13,22 @@
   "image_limits": {
     "standard": {
       "compressed_bytes": 50000000,
-      "unpacked_bytes": 104857600
+      "unpacked_bytes": 125000000
     },
     "alpine": {
       "compressed_bytes": 10000000,
-      "unpacked_bytes": 16777216
+      "unpacked_bytes": 20000000
     }
   },
   "scenario_limits": {
     "startup": {
       "ready_ms": {
-        "max": 2000
+        "max": 500
       }
     },
     "idle": {
       "memory_bytes": {
-        "max": 33554432
+        "max": 20000000
       },
       "cpu_percent": {
         "max": 1

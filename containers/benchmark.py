@@ -2,6 +2,7 @@ import argparse
 import concurrent.futures
 import contextlib
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -220,6 +221,17 @@ def isolated_network(engine, name):
         raise RuntimeError("container engine did not disable external networking")
 
 
+def container_endpoint(engine, name, network):
+    if engine == "docker":
+        metadata = json.loads(command(engine, "inspect", name))[0]
+        address = ipaddress.IPv4Address(metadata["NetworkSettings"]["Networks"][network]["IPAddress"])
+        return f"http://{address}:3000"
+    port = int(command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1])
+    if not 0 < port < 65536:
+        raise ValueError("invalid published port")
+    return f"http://127.0.0.1:{port}"
+
+
 def run_sample(engine, image, policy):
     name = "slopbox-perf-" + uuid.uuid4().hex
     volume = name + "-data"
@@ -232,8 +244,7 @@ def run_sample(engine, image, policy):
         _, key = command(engine, "run", "--rm", "--network", "none", *envelope, "-v", volume + ":/data", image, "keys", "create").split()
         start = time.monotonic()
         command(engine, "run", "-d", "--name", name, *envelope, "--network", network, "--pids-limit", "128", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=http://127.0.0.1/", image)
-        port = command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1]
-        base = "http://127.0.0.1:" + port
+        base = container_endpoint(engine, name, network)
         ready(base, start + 15)
         result = {"startup": {"ready_ms": (time.monotonic() - start) * 1000}}
         cgroup = cgroup_path(engine, name, resources)

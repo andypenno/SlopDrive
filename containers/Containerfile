@@ -7,7 +7,6 @@ RUN cargo build --release --locked
 RUN strip /src/target/release/slopbox
 
 FROM docker.io/library/debian:bookworm-slim
-RUN dd if=/dev/urandom of=/performance-rehearsal-bloat bs=1048576 count=24
 RUN groupadd --gid 10001 slopbox && useradd --uid 10001 --gid 10001 --no-create-home slopbox \
     && mkdir /data && chown slopbox:slopbox /data
 COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox

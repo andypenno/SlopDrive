@@ -32,10 +32,10 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 
 | Absolute requirement | Limit |
 |---|---|
-| Standard image | 50 MB compressed, 100 MiB unpacked |
-| Alpine image | 10 MB compressed, 16 MiB unpacked |
-| Readiness | 2 seconds, excluding image pull |
-| Idle memory and CPU | 32 MiB, 1% of one CPU |
+| Standard image | 50 MB compressed, 125 MB unpacked |
+| Alpine image | 10 MB compressed, 20 MB unpacked |
+| Readiness | 500 ms, excluding image pull |
+| Idle memory and CPU | 20 MB, 1% of one CPU |
 | Busy memory | 128 MB |
 | Retained memory growth | 80 MiB above seeded idle memory |
 | Read operations | p95 <= 100 ms, CPU <= 3 ms/op, throughput >= 300 op/s |
@@ -46,11 +46,11 @@ In addition, CPU cost cannot exceed twice the fixed profile/variant reference, a
 
 MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
 
-Initial local calibration used five repetitions per variant. Compressed runtime layers measured about 30.4 MiB for standard and 5.4 MiB for Alpine. Write p95 maxima were about 25 ms and 45 ms respectively. The first successful PR run supplied three separate hosted-runner repetitions per variant. The policy records the reference commit, image digests, hosts, run ID, and median measurements.
+Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across collected normal runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The size and memory caps allow at least 40% headroom. The 100 ms latency cap allows 88% above the worst write p95 of 53.3 ms. Read and rejection latency share that cap; their tighter CPU and throughput references also detect regressions. The policy records reference commits, image digests, hosts, run ID, and median measurements.
 
 Compressed size covers unique runtime layers for Linux amd64, excluding SBOMs, attestations, and archive overhead. Memory covers the whole cgroup, including filesystem cache. Busy memory uses the cumulative cgroup peak, so an earlier workload's peak remains visible. Recovery bounds retained growth; it does not prove absence of leaks. Latency is client-side verified operation latency under a closed-loop workload, not a claim about maximum sustainable traffic.
 
-The service runs on an internal container network with only its measured port published on localhost. CI verifies the source revision label and the loaded image's configuration digest against the OCI artifact.
+The service runs on an internal container network. Podman exposes its measured port on localhost; Docker measurements use the container's bridge address because Docker disables port publishing on internal networks. CI verifies the source revision label and the loaded image's configuration digest against the OCI artifact.
 
 ## Owner control and activation
 

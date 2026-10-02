@@ -90,6 +90,23 @@ def check_response_bound():
         rejects(benchmark.request, "http://local", "/")
 
 
+def check_container_endpoint():
+    metadata = [{"NetworkSettings": {"Networks": {"owned-network": {"IPAddress": "172.19.0.2"}}}}]
+    with patch.object(benchmark, "command", return_value=json.dumps(metadata)) as command:
+        assert benchmark.container_endpoint("docker", "owned-container", "owned-network") == "http://172.19.0.2:3000"
+        assert command.call_args.args == ("docker", "inspect", "owned-container")
+    for address in ("", "invalid", "127.0.0.1/path"):
+        metadata[0]["NetworkSettings"]["Networks"]["owned-network"]["IPAddress"] = address
+        with patch.object(benchmark, "command", return_value=json.dumps(metadata)):
+            rejects(benchmark.container_endpoint, "docker", "owned-container", "owned-network")
+    with patch.object(benchmark, "command", return_value="127.0.0.1:43210\n") as command:
+        assert benchmark.container_endpoint("podman", "owned-container", "owned-network") == "http://127.0.0.1:43210"
+        assert command.call_args.args == ("podman", "port", "owned-container", "3000/tcp")
+    for port in ("0", "65536", "invalid"):
+        with patch.object(benchmark, "command", return_value="127.0.0.1:" + port):
+            rejects(benchmark.container_endpoint, "podman", "owned-container", "owned-network")
+
+
 def check_network_constraints():
     for engine, field in (("docker", "Internal"), ("podman", "internal")):
         with patch.object(benchmark, "command", side_effect=["owned-network", json.dumps([{field: True}])]) as command:
@@ -106,5 +123,6 @@ if __name__ == "__main__":
     check_image_identity()
     check_response_correctness()
     check_response_bound()
+    check_container_endpoint()
     check_network_constraints()
     print("Cgroup counters, CPU intervals, and latency distributions checked")
