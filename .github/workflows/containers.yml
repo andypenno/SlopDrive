@@ -121,11 +121,12 @@ jobs:
       - name: Measure exact image artifacts
         env:
           ARCHIVES: ${{ runner.temp }}/images
+          REVISION: ${{ github.sha }}
         run: |
           result=0
           for variant in standard alpine; do
             skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
-            if ! python3 containers/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --policy containers/performance-policy.json --output "test-output/performance-$variant.json"; then
+            if ! python3 containers/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy containers/performance-policy.json --output "test-output/performance-$variant.json"; then
               result=1
             fi
           done

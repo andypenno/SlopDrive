@@ -63,6 +63,10 @@ def check_image_identity():
     benchmark.verify_image(metadata, {"Id": "a" * 64})
     rejects(benchmark.verify_image, metadata, {"Id": "sha256:" + "b" * 64})
     rejects(benchmark.verify_image, metadata, {"RepoDigests": ["old:image"]})
+    inspected = {"Id": "a" * 64, "Config": {"Labels": {"org.opencontainers.image.revision": "c" * 40}}}
+    benchmark.verify_image(metadata, inspected, "c" * 40)
+    rejects(benchmark.verify_image, metadata, inspected, "d" * 40)
+    rejects(benchmark.verify_image, metadata, {"Id": "a" * 64}, "c" * 40)
 
 
 def check_response_correctness():
@@ -86,10 +90,21 @@ def check_response_bound():
         rejects(benchmark.request, "http://local", "/")
 
 
+def check_network_constraints():
+    for engine, field in (("docker", "Internal"), ("podman", "internal")):
+        with patch.object(benchmark, "command", side_effect=["owned-network", json.dumps([{field: True}])]) as command:
+            benchmark.isolated_network(engine, "owned-network")
+            assert command.call_args_list[0].args == (engine, "network", "create", "--internal", "owned-network")
+        for value in (False, None, "true"):
+            with patch.object(benchmark, "command", side_effect=["owned-network", json.dumps([{field: value}])]):
+                rejects(benchmark.isolated_network, engine, "owned-network")
+
+
 if __name__ == "__main__":
     check_cgroup_measurements()
     check_statistics()
     check_image_identity()
     check_response_correctness()
     check_response_bound()
+    check_network_constraints()
     print("Cgroup counters, CPU intervals, and latency distributions checked")

@@ -6,6 +6,7 @@ import json
 import math
 import os
 import platform
+import re
 import signal
 import subprocess
 import threading
@@ -120,12 +121,16 @@ def page(size, serial):
     return prefix + "x" * (size - len(prefix) - 4) + "</p>"
 
 
-def verify_image(metadata, inspected):
+def verify_image(metadata, inspected, expected_revision=None):
     image_id = inspected.get("Id", "")
     if not image_id.startswith("sha256:"):
         image_id = "sha256:" + image_id
     if image_id != metadata["config_digest"]:
         raise RuntimeError("loaded image config differs from the measured OCI runtime image")
+    if expected_revision is not None:
+        labels = inspected.get("Config", {}).get("Labels") or {}
+        if not re.fullmatch(r"[0-9a-f]{40}", expected_revision) or labels.get("org.opencontainers.image.revision") != expected_revision:
+            raise RuntimeError("loaded image was built for another source revision")
 
 
 def ready(base, deadline):
@@ -208,16 +213,25 @@ def cgroup_path(engine, name, resources):
     return path
 
 
+def isolated_network(engine, name):
+    command(engine, "network", "create", "--internal", name)
+    metadata = json.loads(command(engine, "network", "inspect", name))[0]
+    if metadata.get("Internal", metadata.get("internal")) is not True:
+        raise RuntimeError("container engine did not disable external networking")
+
+
 def run_sample(engine, image, policy):
     name = "slopbox-perf-" + uuid.uuid4().hex
     volume = name + "-data"
+    network = name + "-network"
     resources = policy["resources"]
     envelope = ["--cpus", str(resources["cpus"]), "--memory", str(resources["memory_bytes"]), "--memory-swap", str(resources["memory_bytes"])]
     command(engine, "volume", "create", volume)
     try:
+        isolated_network(engine, network)
         _, key = command(engine, "run", "--rm", "--network", "none", *envelope, "-v", volume + ":/data", image, "keys", "create").split()
         start = time.monotonic()
-        command(engine, "run", "-d", "--name", name, *envelope, "--pids-limit", "128", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=http://127.0.0.1/", image)
+        command(engine, "run", "-d", "--name", name, *envelope, "--network", network, "--pids-limit", "128", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=http://127.0.0.1/", image)
         port = command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1]
         base = "http://127.0.0.1:" + port
         ready(base, start + 15)
@@ -310,6 +324,7 @@ def run_sample(engine, image, policy):
     finally:
         subprocess.run([engine, "rm", "-f", name], capture_output=True, timeout=30)
         subprocess.run([engine, "volume", "rm", volume], capture_output=True, timeout=30)
+        subprocess.run([engine, "network", "rm", network], capture_output=True, timeout=30)
 
 
 def main():
@@ -322,7 +337,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--collect-only", action="store_true")
     parser.add_argument("--profile", choices=["local", "ci"], default="local")
+    parser.add_argument("--revision")
     args = parser.parse_args()
+    if args.profile == "ci" and args.revision is None:
+        parser.error("the CI profile requires --revision")
     policy = json.loads(args.policy.read_text())
     validate_policy(policy)
     cpu_info = Path("/proc/cpuinfo").read_text().splitlines()
@@ -349,8 +367,9 @@ def main():
     try:
         metadata = oci_size(args.archive)
         inspected = json.loads(command(args.engine, "image", "inspect", args.image))[0]
-        verify_image(metadata, inspected)
-        report["image"] = {**metadata, "unpacked_bytes": inspected["Size"]}
+        verify_image(metadata, inspected, args.revision)
+        labels = inspected.get("Config", {}).get("Labels") or {}
+        report["image"] = {**metadata, "unpacked_bytes": inspected["Size"], "source_revision": labels.get("org.opencontainers.image.revision")}
         save()
         for _ in range(policy["runs"]):
             report["samples"].append(run_sample(args.engine, args.image, policy))
