@@ -1,12 +1,14 @@
-FROM rust:1.98-bookworm AS build
+FROM docker.io/library/rust:1.98-bookworm AS build
 WORKDIR /src
+ARG CARGO_BUILD_JOBS=1
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
+COPY migrations ./migrations
 RUN cargo build --release --locked
 RUN strip /src/target/release/slopbox
 
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 RUN groupadd --gid 10001 slopbox && useradd --uid 10001 --gid 10001 --no-create-home slopbox \
     && mkdir /data && chown slopbox:slopbox /data
 COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox

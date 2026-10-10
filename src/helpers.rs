@@ -3,14 +3,10 @@ use crate::{AppError, AppState, UploadResponse, VersionResponse};
 use axum::Json;
 use axum::extract::Multipart;
 use axum::http::{HeaderMap, header};
+use chrono::SubsecRound;
 use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
 
 pub(crate) const MAX_HTML_BYTES: usize = 1024 * 1024;
 
@@ -32,72 +28,11 @@ pub(crate) fn random_hex(bytes: usize) -> Result<String, StoreError> {
     Ok(hex::encode(data))
 }
 
-pub(crate) fn atomic_write(path: &Path, data: &[u8]) -> Result<(), StoreError> {
-    let directory = File::open(path.parent().ok_or(StoreError::NotFound)?)?;
-    let temp = path.with_extension(format!("tmp-{}", random_hex(8)?));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options.open(&temp)?;
-    let result = (|| {
-        file.write_all(data)?;
-        file.sync_all()?;
-        fs::rename(&temp, path)?;
-        directory.sync_all().map_err(StoreError::CommitUncertain)
-    })();
-    drop(file);
-    if result.is_err()
-        && let Err(error) = fs::remove_file(&temp)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(%error, "temporary write cleanup failed");
-    }
-    result
-}
-
-pub(crate) fn durable_directory(path: &Path) -> Result<(), StoreError> {
-    if path.as_os_str().is_empty() {
-        return Ok(());
-    }
-    if path.is_dir() {
-        let parent = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or(path);
-        return File::open(parent)?
-            .sync_all()
-            .map_err(StoreError::CommitUncertain);
-    }
-    let parent = path.parent().unwrap_or(Path::new("."));
-    durable_directory(parent)?;
-    let directory = File::open(if parent.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        parent
-    })?;
-    match fs::create_dir(path) {
-        Ok(()) => directory.sync_all().map_err(StoreError::CommitUncertain),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => {
-            directory.sync_all().map_err(StoreError::CommitUncertain)
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
 pub(crate) fn version_for(html: &[u8]) -> Version {
     Version {
         content_hash: hash(html),
-        created_at: Utc::now(),
+        created_at: Utc::now().trunc_subsecs(6),
         size_bytes: html.len(),
-    }
-}
-
-pub(crate) fn not_found(error: std::io::Error) -> StoreError {
-    if error.kind() == std::io::ErrorKind::NotFound {
-        StoreError::NotFound
-    } else {
-        StoreError::Io(error)
     }
 }
 
@@ -129,7 +64,7 @@ pub(crate) async fn authorize(state: &AppState, headers: &HeaderMap) -> Result<(
         .ok_or(AppError::Unauthorized)?
         .to_owned();
     let keys = state.keys.clone();
-    if blocking(state, move || Ok(keys.valid(&key))).await? {
+    if database_job(state, async move { Ok(keys.valid(&key).await?) }).await? {
         if let Some(origin) = headers.get(header::ORIGIN)
             && origin.as_bytes() != state.base_url.origin().ascii_serialization().as_bytes()
         {
@@ -139,6 +74,24 @@ pub(crate) async fn authorize(state: &AppState, headers: &HeaderMap) -> Result<(
     } else {
         Err(AppError::Unauthorized)
     }
+}
+
+pub(crate) async fn database_job<T: Send + 'static>(
+    state: &AppState,
+    operation: impl std::future::Future<Output = Result<T, AppError>> + Send + 'static,
+) -> Result<T, AppError> {
+    let permit = state
+        .jobs
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| AppError::Internal("database queue closed".into()))?;
+    tokio::spawn(async move {
+        let _permit = permit;
+        operation.await
+    })
+    .await
+    .map_err(|_| AppError::Internal("database job failed".into()))?
 }
 
 pub(crate) fn validate_html(content: &str) -> Result<(), AppError> {

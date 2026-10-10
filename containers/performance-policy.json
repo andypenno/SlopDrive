@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "runs": 3,
+  "resources": {
+    "cpus": 1,
+    "memory_bytes": 268435456
+  },
+  "workload": {
+    "requests": 600,
+    "concurrency": 4,
+    "idle_seconds": 5
+  },
+  "image_limits": {
+    "standard": {
+      "compressed_bytes": 50000000,
+      "unpacked_bytes": 125000000
+    },
+    "alpine": {
+      "compressed_bytes": 10000000,
+      "unpacked_bytes": 20000000
+    }
+  },
+  "scenario_limits": {
+    "startup": {
+      "ready_ms": {
+        "max": 500
+      }
+    },
+    "idle": {
+      "memory_bytes": {
+        "max": 50000000
+      },
+      "cpu_percent": {
+        "max": 1
+      }
+    },
+    "recovery": {
+      "memory_growth_bytes": {
+        "max": 83886080
+      }
+    },
+    "read": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 3
+      },
+      "p95_ms": {
+        "max": 500
+      },
+      "operations_per_second": {
+        "min": 300
+      }
+    },
+    "write": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 12
+      },
+      "p95_ms": {
+        "max": 500
+      },
+      "operations_per_second": {
+        "min": 70
+      }
+    },
+    "reject": {
+      "memory_bytes": {
+        "max": 128000000
+      },
+      "cpu_ms_per_op": {
+        "max": 4
+      },
+      "p95_ms": {
+        "max": 500
+      },
+      "operations_per_second": {
+        "min": 150
+      }
+    }
+  },
+  "reference": {
+    "maximum_ratio": 2,
+    "profiles": {
+      "local": {
+        "standard": {
+          "read": {
+            "cpu_ms_per_op": 1,
+            "operations_per_second": 1028.078315
+          },
+          "write": {
+            "cpu_ms_per_op": 5,
+            "operations_per_second": 235.482835
+          },
+          "reject": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 315.752121
+          }
+        },
+        "alpine": {
+          "read": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 737.933797
+          },
+          "write": {
+            "cpu_ms_per_op": 7,
+            "operations_per_second": 160.163139
+          },
+          "reject": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 334.789053
+          }
+        }
+      },
+      "ci": {
+        "standard": {
+          "read": {
+            "cpu_ms_per_op": 1,
+            "operations_per_second": 1892.584207
+          },
+          "write": {
+            "cpu_ms_per_op": 5,
+            "operations_per_second": 449.020249
+          },
+          "reject": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 896.462666
+          }
+        },
+        "alpine": {
+          "read": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 1435.249309
+          },
+          "write": {
+            "cpu_ms_per_op": 7,
+            "operations_per_second": 323.435546
+          },
+          "reject": {
+            "cpu_ms_per_op": 2,
+            "operations_per_second": 747.189975
+          }
+        }
+      }
+    }
+  },
+  "calibration": {
+    "source_commit": "4c152e3d04bf8c3190c02d3e1686519393fdf65d",
+    "local": {
+      "standard": {
+        "image_digest": "sha256:23e658d76b436f1f893c30b4fbd639b7e9893ec4f17cf8bd1ab342240011ec21",
+        "harness_sha256": "66c4d5e719a749165c767079ac0128fb885f03849909377623de2075617c4edb",
+        "host": {
+          "kernel": "6.17.0-40-generic",
+          "machine": "x86_64",
+          "engine": "podman version 4.9.3",
+          "cpu": "13th Gen Intel(R) Core(TM) i7-1365U",
+          "logical_cpus": 12
+        },
+        "repetitions": 5
+      },
+      "alpine": {
+        "image_digest": "sha256:6f2b2202f61aece2af5803a5ddf48f50d1ae5c358be14d60d8337bb9df1e0646",
+        "harness_sha256": "e1536a2877409d08065bc9f0bb2b26b67737058e469452fe6ad205c004133901",
+        "host": {
+          "kernel": "6.17.0-40-generic",
+          "machine": "x86_64",
+          "engine": "podman version 4.9.3",
+          "cpu": "13th Gen Intel(R) Core(TM) i7-1365U",
+          "logical_cpus": 12
+        },
+        "repetitions": 5
+      }
+    },
+    "ci": {
+      "standard": {
+        "image_digest": "sha256:55411ecb9b16250f31fdfa9acce4249966cd975a6837d3bb0ee4d85455b300e2",
+        "harness_sha256": "0904eaefb90770377c8946b2460283b986384ac414af38d2fc16fde71961ba4f",
+        "host": {
+          "kernel": "6.17.0-1022-azure",
+          "machine": "x86_64",
+          "engine": "Docker version 28.0.4, build b8034c0",
+          "cpu": "AMD EPYC 9V45 96-Core Processor",
+          "logical_cpus": 2
+        },
+        "repetitions": 3,
+        "run_id": 37038992874,
+        "run_head_sha": "7bdc29021dccf7d75e7be40a4c9a136534dbf5c6"
+      },
+      "alpine": {
+        "image_digest": "sha256:6d6f2c747a5e627532acee44de1d5ab631e828700031d41867d4cb1eb5e8b5a3",
+        "harness_sha256": "0904eaefb90770377c8946b2460283b986384ac414af38d2fc16fde71961ba4f",
+        "host": {
+          "kernel": "6.17.0-1022-azure",
+          "machine": "x86_64",
+          "engine": "Docker version 28.0.4, build b8034c0",
+          "cpu": "AMD EPYC 9V45 96-Core Processor",
+          "logical_cpus": 2
+        },
+        "repetitions": 3,
+        "run_id": 37038992874,
+        "run_head_sha": "7bdc29021dccf7d75e7be40a4c9a136534dbf5c6"
+      }
+    },
+    "cpu_allowance_revision": {
+      "source_commit": "110265a6a5321394c3208e693f191531e2629dab",
+      "ci_run_id": 38050250307,
+      "original_cpu_references": {
+        "local": {
+          "standard": {
+            "read": 0.693948,
+            "write": 3.37318,
+            "reject": 1.14748
+          },
+          "alpine": {
+            "read": 1.3614,
+            "write": 6.199232,
+            "reject": 1.840018
+          }
+        },
+        "ci": {
+          "standard": {
+            "read": 0.250135,
+            "write": 1.38545,
+            "reject": 0.405662
+          },
+          "alpine": {
+            "read": 0.525047,
+            "write": 2.713897,
+            "reject": 0.98326
+          }
+        }
+      },
+      "basis": "Rounded allowances shared across runner profiles; measured SQLite maxima documented in docs/performance.md. Absolute CPU caps unchanged."
+    }
+  }
+}

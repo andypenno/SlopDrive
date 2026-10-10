@@ -4,38 +4,123 @@ use std::process::Command;
 mod process;
 
 #[test]
-fn key_cli_create_list_revoke_and_errors() {
+fn database_provider_must_not_fall_back_to_filesystem() {
     let dir = tempfile::tempdir().unwrap();
-    let run = |args: &[&str]| {
-        process::output(
+    let output = process::output(
+        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            .env("DATABASE_PROVIDER", "unknown")
+            .arg("--storage-path")
+            .arg(dir.path())
+            .args(["keys", "create"]),
+    );
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn key_cli_create_list_revoke_and_errors() {
+    for provider in ["sqlite", "postgres"] {
+        if provider == "postgres"
+            && std::env::var("SLOPBOX_TEST_PROVIDER").as_deref() != Ok("postgres")
+        {
+            continue;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_slopbox"));
+            command
+                .arg("--storage-path")
+                .arg(dir.path())
+                .args(args)
+                .env("DATABASE_PROVIDER", provider);
+            if provider == "postgres" {
+                command
+                    .env(
+                        "DATABASE_URL",
+                        std::env::var("DATABASE_TEST_POSTGRES_URL").unwrap(),
+                    )
+                    .env(
+                        "DATABASE_SCHEMA",
+                        format!(
+                            "cli_{}",
+                            dir.path()
+                                .file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .replace('.', "_")
+                                .to_lowercase()
+                        ),
+                    )
+                    .env("DATABASE_TLS_MODE", "disable");
+            }
+            process::output(&mut command)
+        };
+
+        let created = run(&["keys", "create"]);
+        assert!(created.status.success());
+        let output = String::from_utf8(created.stdout).unwrap();
+        let (id, key) = output.trim().split_once(' ').unwrap();
+        assert_eq!(id.len(), 16);
+        assert!(key.starts_with(&format!("sb_{id}_")));
+        assert_eq!(key.len(), 84);
+
+        let listed = run(&["keys", "list"]);
+        assert!(listed.status.success());
+        assert_eq!(String::from_utf8(listed.stdout).unwrap().trim(), id);
+        assert!(run(&["keys", "revoke", "bad/id"]).status.code().unwrap() != 0);
+        assert!(
+            run(&["keys", "revoke", &"0".repeat(16)])
+                .status
+                .code()
+                .unwrap()
+                != 0
+        );
+        assert!(run(&["keys", "revoke", id]).status.success());
+        assert!(run(&["keys", "list"]).stdout.is_empty());
+    }
+}
+
+#[test]
+fn database_configuration_rejects_conflicts_without_disclosing_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    for settings in [
+        vec![
+            ("DATABASE_PROVIDER", "postgres"),
+            ("DATABASE_URL", "postgres://user:private-password@host/db"),
+            ("DATABASE_HOST", "other"),
+        ],
+        vec![
+            ("DATABASE_PROVIDER", "sqlite"),
+            ("DATABASE_PASSWORD", "private-password"),
+        ],
+        vec![
+            ("DATABASE_PROVIDER", "postgres"),
+            ("DATABASE_URL", "sqlite:/wrong"),
+        ],
+        vec![
+            ("DATABASE_PROVIDER", "postgres"),
+            (
+                "DATABASE_URL",
+                "postgres://user:private-password@host:invalid/db",
+            ),
+        ],
+        vec![
+            ("DATABASE_PROVIDER", "postgres"),
+            ("DATABASE_URL", "postgres://host/db"),
+            ("DATABASE_SCHEMA", "public;DROP TABLE api_keys"),
+        ],
+        vec![("DATABASE_MAX_CONNECTIONS", "0")],
+    ] {
+        let output = process::output(
             Command::new(env!("CARGO_BIN_EXE_slopbox"))
                 .arg("--storage-path")
                 .arg(dir.path())
-                .args(args),
-        )
-    };
-
-    let created = run(&["keys", "create"]);
-    assert!(created.status.success());
-    let output = String::from_utf8(created.stdout).unwrap();
-    let (id, key) = output.trim().split_once(' ').unwrap();
-    assert_eq!(id.len(), 16);
-    assert!(key.starts_with(&format!("sb_{id}_")));
-    assert_eq!(key.len(), 84);
-
-    let listed = run(&["keys", "list"]);
-    assert!(listed.status.success());
-    assert_eq!(String::from_utf8(listed.stdout).unwrap().trim(), id);
-    assert!(run(&["keys", "revoke", "bad/id"]).status.code().unwrap() != 0);
-    assert!(
-        run(&["keys", "revoke", &"0".repeat(16)])
-            .status
-            .code()
-            .unwrap()
-            != 0
-    );
-    assert!(run(&["keys", "revoke", id]).status.success());
-    assert!(run(&["keys", "list"]).stdout.is_empty());
+                .args(["keys", "list"])
+                .envs(settings),
+        );
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("private-password"));
+    }
 }
 
 #[test]
@@ -79,8 +164,7 @@ fn serve_reports_bind_failure_and_honors_environment_configuration() {
     );
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("bind failed"));
-    assert!(dir.path().join("uploads").is_dir());
-    assert!(dir.path().join("keys").is_dir());
+    assert!(dir.path().join("slopbox.sqlite").is_file());
 }
 
 #[test]
@@ -105,9 +189,9 @@ fn cli_reports_storage_initialization_failures() {
 }
 
 #[test]
-fn serve_reports_key_store_initialization_failure_after_storage_setup() {
+fn serve_reports_database_initialization_failure() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("keys"), b"keep").unwrap();
+    std::fs::create_dir(dir.path().join("slopbox.sqlite")).unwrap();
     let output = process::output(
         Command::new(env!("CARGO_BIN_EXE_slopbox"))
             .arg("--storage-path")
@@ -116,8 +200,7 @@ fn serve_reports_key_store_initialization_failure_after_storage_setup() {
     );
     assert!(!output.status.success());
     assert!(!output.stderr.is_empty());
-    assert!(dir.path().join("uploads").is_dir());
-    assert_eq!(std::fs::read(dir.path().join("keys")).unwrap(), b"keep");
+    assert!(dir.path().join("slopbox.sqlite").is_dir());
 }
 
 #[test]
@@ -217,114 +300,26 @@ fn termination_signals_drain_an_active_upload_before_exit() {
                 .status
                 .success()
         );
-        let uploads: Vec<_> = std::fs::read_dir(dir.path().join("uploads"))
-            .unwrap()
-            .collect();
-        assert_eq!(uploads.len(), 1);
-        let metadata: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(uploads[0].as_ref().unwrap().path().join("metadata.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(metadata["versions"].as_array().unwrap().len(), 1);
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn shutdown_waits_for_a_disconnected_requests_blocking_job() {
-    use std::io::{BufRead, Write};
-    use std::time::Duration;
-    let dir = tempfile::tempdir().unwrap();
-    let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
-            .arg("--storage-path")
-            .arg(dir.path())
-            .args(["keys", "create"]),
-    );
-    let key_output = String::from_utf8(output.stdout).unwrap();
-    let (id, key) = key_output.trim().split_once(' ').unwrap();
-    let key_path = dir.path().join("keys").join(format!("{id}.json"));
-    let record = std::fs::read(&key_path).unwrap();
-    std::fs::rename(&key_path, key_path.with_extension("original")).unwrap();
-    assert!(
-        Command::new("mkfifo")
-            .arg(&key_path)
-            .status()
-            .unwrap()
-            .success()
-    );
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let mut child = process::Process::spawn(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
-            .arg("--storage-path")
-            .arg(dir.path())
-            .args([
-                "serve",
-                "--base-url",
-                "http://localhost/",
-                "--bind-addr",
-                &address.to_string(),
-            ]),
-    );
-    let (phase, reached) = std::sync::mpsc::channel();
-    let stdout = child.0.as_mut().unwrap().stdout.take().unwrap();
-    let logs = std::thread::spawn(move || {
-        for line in std::io::BufReader::new(stdout).lines() {
-            if line.unwrap().contains("draining blocking jobs") {
-                let _ = phase.send(());
-            }
-        }
-    });
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    let mut stream = loop {
-        match std::net::TcpStream::connect(address) {
-            Ok(stream) => break stream,
-            Err(_) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10))
-            }
-            Err(error) => panic!("server did not start: {error}"),
-        }
-    };
-    write!(stream,"GET /upload/{}/versions HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {key}\r\n\r\n","0".repeat(32)).unwrap();
-    let (opened, reading) = std::sync::mpsc::channel();
-    let (release, wait) = std::sync::mpsc::channel();
-    let writer = std::thread::spawn(move || {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .open(key_path)
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let pool = sqlx::SqlitePool::connect(&format!(
+                "sqlite:{}",
+                dir.path().join("slopbox.sqlite").display()
+            ))
+            .await
             .unwrap();
-        opened.send(()).unwrap();
-        let _ = wait.recv_timeout(Duration::from_secs(10));
-        file.write_all(&record).unwrap();
-    });
-    reading.recv_timeout(Duration::from_secs(3)).unwrap();
-    stream.shutdown(std::net::Shutdown::Both).unwrap();
-    drop(stream);
-    std::thread::sleep(Duration::from_millis(50));
-    assert!(
-        Command::new("kill")
-            .args(["-TERM", &child.0.as_mut().unwrap().id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    reached
-        .recv_timeout(Duration::from_secs(2))
-        .expect("HTTP connections did not drain");
-    std::thread::sleep(Duration::from_secs(2));
-    assert!(child.0.as_mut().unwrap().try_wait().unwrap().is_none());
-    release.send(()).unwrap();
-    writer.join().unwrap();
-    assert!(
-        child
-            .output(Duration::from_secs(3))
-            .unwrap()
-            .status
-            .success()
-    );
-    logs.join().unwrap();
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM versions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(count, 1);
+            let content: Vec<u8> = sqlx::query_scalar("SELECT content FROM versions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(content, b"<p>drained</p>");
+        });
+    }
 }
 
 #[cfg(unix)]
@@ -378,10 +373,18 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
         .expect("shutdown exceeded its deadline");
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("shutdown drain timed out"));
-    assert_eq!(
-        std::fs::read_dir(dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        0
-    );
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let pool = sqlx::SqlitePool::connect(&format!(
+            "sqlite:{}",
+            dir.path().join("slopbox.sqlite").display()
+        ))
+        .await
+        .unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uploads")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    });
 }

@@ -41,7 +41,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.package.outputs.version }}
           provenance: mode=max
           sbom: true
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-${{ matrix.variant }}
           path: ${{ runner.temp }}/${{ matrix.variant }}.tar
@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: image-*
           merge-multiple: true
@@ -97,3 +97,45 @@ jobs:
           fi
       - name: Compose configuration
         run: python3 tests/compose.py docker compose
+
+  performance:
+    name: Performance budgets
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: image-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/images
+      - name: Install image tools
+        run: |
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes skopeo
+          fi
+      - name: Measure exact image artifacts
+        env:
+          ARCHIVES: ${{ runner.temp }}/images
+          REVISION: ${{ github.sha }}
+        run: |
+          result=0
+          for variant in standard alpine; do
+            skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
+            if ! python3 containers/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy containers/performance-policy.json --output "test-output/performance-$variant.json"; then
+              result=1
+            fi
+          done
+          exit "$result"
+      - name: Preserve raw measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-measurements
+          path: test-output/performance-*.json
+          retention-days: 7
+          if-no-files-found: error

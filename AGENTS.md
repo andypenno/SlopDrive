@@ -7,4 +7,4 @@
 - Keep the image compatible with Docker and Podman. The service only needs a mounted data directory, a public base URL, and a reverse proxy for TLS.
 - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` for code changes. Check affected HTTP and MCP behavior against a running service when routes change.
 - Keep test bodies under `tests/`, grouped by what they test. Put shared production helpers in `src/helpers.rs`; split them into `src/helpers/` when one file no longer fits.
-- Keep durable conventions in `docs/` and generated coverage, test logs, and review reports in gitignored `test-output/`.
+- Start with [docs/README.md](docs/README.md) to discover contributor conventions, then read the linked documents relevant to the task. Keep durable conventions in `docs/` and generated coverage, test logs, and review reports in gitignored `test-output/`.
