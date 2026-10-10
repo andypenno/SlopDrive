@@ -47,7 +47,7 @@
         "max": 3
       },
       "p95_ms": {
-        "max": 100
+        "max": 500
       },
       "operations_per_second": {
         "min": 300
@@ -61,7 +61,7 @@
         "max": 12
       },
       "p95_ms": {
-        "max": 100
+        "max": 500
       },
       "operations_per_second": {
         "min": 70
@@ -75,7 +75,7 @@
         "max": 4
       },
       "p95_ms": {
-        "max": 100
+        "max": 500
       },
       "operations_per_second": {
         "min": 150

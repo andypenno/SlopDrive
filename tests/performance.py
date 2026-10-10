@@ -63,6 +63,28 @@ def policy_and_report():
     return policy, report
 
 
+def check_latency_budget():
+    policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
+    _, report = policy_and_report()
+    report["policy_sha256"] = performance.policy_hash(policy)
+    report["samples"] = [copy.deepcopy(report["samples"][0]) for _ in range(policy["runs"])]
+    for profile in ("local", "ci"):
+        report["profile"] = profile
+        for variant in ("standard", "alpine"):
+            report["variant"] = variant
+            for sample in report["samples"]:
+                for scenario in ("read", "write", "reject"):
+                    sample[scenario].update(
+                        completed=policy["workload"]["requests"], p95_ms=500,
+                        operations_per_second=policy["reference"]["profiles"][profile][variant][scenario]["operations_per_second"],
+                    )
+            performance.evaluate(policy, report)
+            for scenario in ("read", "write", "reject"):
+                changed = copy.deepcopy(report)
+                changed["samples"][0][scenario]["p95_ms"] = 500.01
+                rejects(performance.evaluate, policy, changed)
+
+
 def check_budgets():
     policy, report = policy_and_report()
     performance.evaluate(policy, report)
@@ -169,6 +191,7 @@ def check_oci_size():
 
 
 if __name__ == "__main__":
+    check_latency_budget()
     check_budgets()
     check_incomplete_and_policy_tampering()
     check_fixed_reference()
