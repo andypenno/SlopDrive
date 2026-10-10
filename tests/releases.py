@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -172,6 +173,15 @@ def check_git_ancestry():
             rejects(release.validate_release, "v1.2.3", "1.2.3")
 
 
+def check_container_stages():
+    for name in ("Containerfile", "Containerfile.alpine"):
+        text = (ROOT / "containers" / name).read_text()
+        stages = set(re.findall(r"^FROM .+ AS (\S+)$", text, re.MULTILINE | re.IGNORECASE))
+        sources = set(re.findall(r"^COPY --from=(\S+)", text, re.MULTILINE))
+        assert sources and sources <= stages, f"{name}: COPY refers to an undeclared build stage"
+
+
+check_container_stages()
 check_versions()
 check_release_boundary()
 check_promotion()
