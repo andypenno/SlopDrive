@@ -181,7 +181,16 @@ def check_container_stages():
         assert sources and sources <= stages, f"{name}: COPY refers to an undeclared build stage"
 
 
+def check_dependabot_targets():
+    config = (ROOT / ".github/dependabot.yml").read_text()
+    updates = config.split("  - package-ecosystem: ")[1:]
+    assert {update.splitlines()[0] for update in updates} == {"github-actions", "cargo", "docker"}
+    for update in updates:
+        assert "    target-branch: dev" in update.splitlines(), "Dependabot updates must target dev"
+
+
 check_container_stages()
+check_dependabot_targets()
 check_versions()
 check_release_boundary()
 check_promotion()
