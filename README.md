@@ -15,13 +15,13 @@ Published HTML is untrusted. Pages run in a browser sandbox that permits scripts
 Use Docker Compose with [containers/compose.yaml](containers/compose.yaml). Set `SLOPBOX_VERSION` to a published version and `BASE_URL` to the public HTTPS address served by your reverse proxy. The version below is an example; it must exist in [GHCR](https://github.com/andypenno/SlopBox/pkgs/container/slopbox) before you can pull it. Private packages require `docker login ghcr.io` with a token that has `read:packages`; public packages need no login.
 
 ```sh
-export SLOPBOX_VERSION=0.1.0
+export SLOPBOX_VERSION=0.2.0
 export BASE_URL=https://pages.example.com/
 docker compose -f containers/compose.yaml pull
 docker compose -f containers/compose.yaml up -d
 ```
 
-Use `0.1.0-alpine` for the Alpine variant. Both variants target Linux amd64 and use the same data format. `stable` tracks the highest versioned release, `latest` tracks successful `main` builds, and `dev` tracks successful `dev` builds. Each channel also has an `-alpine` tag. Pin an exact version for controlled updates; see the [release strategy](docs/releases.md).
+Use `0.2.0-alpine` for the Alpine variant. Both variants target Linux amd64 and use the same data format. `stable` tracks the highest versioned release, `latest` tracks successful `main` builds, and `dev` tracks successful `dev` builds. Each channel also has an `-alpine` tag. Pin an exact version for controlled updates; see the [release strategy](docs/releases.md).
 
 The image runs as UID/GID 10001 and writes to `/data`. If you use a bind mount, make that directory writable by the container's user. The reverse proxy handles TLS and forwards the public origin to port 3000. Restrict network access to your trusted network or VPN.
 
