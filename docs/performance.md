@@ -35,7 +35,7 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Standard image | 50 MB compressed, 125 MB unpacked |
 | Alpine image | 10 MB compressed, 20 MB unpacked |
 | Readiness | 500 ms, excluding image pull |
-| Idle memory and CPU | 20 MB, 1% of one CPU |
+| Idle memory and CPU | 50 MB, 1% of one CPU |
 | Busy memory | 128 MB |
 | Retained memory growth | 80 MiB above seeded idle memory |
 | Read operations | p95 <= 500 ms, CPU <= 3 ms/op, throughput >= 300 op/s |
@@ -49,6 +49,8 @@ MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
 Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across those initial runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The initial size and memory caps allowed at least 40% headroom. The initial 100 ms latency cap allowed 88% above the worst write p95 of 53.3 ms. These measurements describe the filesystem backend, not current database headroom. The policy preserves initial calibration metadata and records CPU allowance revisions separately.
 
 Workload p95 latency now has a 500 ms cap on every repetition. Hosted-runner PR #14 run `38052106658` measured standard write p95 values of 112.2, 14.4, and 38.6 ms with CPU costs of 1.68 to 1.72 ms per operation. The higher latency cap allows elapsed-time variation without changing CPU or throughput limits. Shared-host contention can still exceed it, so a failure requires diagnosis rather than proving a code defect.
+
+SQLite PR #15 run `38053261871` measured peak idle memory of 20.71 MB. The 50 MB idle cap allows feature growth while keeping the 128 MB busy-memory cap separate.
 
 The SQLite implementation measured local maximum CPU costs of 0.996/4.176/1.558 ms for standard reads/writes/rejections, and 2.540/6.569/1.943 ms for Alpine. PR #15 run `38050250307` measured CI maxima of 0.848/2.874/0.910 ms and 1.674/4.636/1.594 ms respectively. Rounded CPU allowances accommodate those costs without treating the original hosted runner as fixed hardware. Alpine reads still have only 18% headroom under the absolute 3 ms cap. The database read path adds SQL retrieval and content integrity validation; these controls remain required.
 

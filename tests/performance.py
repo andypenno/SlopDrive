@@ -63,11 +63,12 @@ def policy_and_report():
     return policy, report
 
 
-def check_latency_budget():
+def check_policy_boundaries():
     policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
     _, report = policy_and_report()
     report["policy_sha256"] = performance.policy_hash(policy)
     report["samples"] = [copy.deepcopy(report["samples"][0]) for _ in range(policy["runs"])]
+    report["samples"][0]["idle"]["memory_bytes"] = 50000000
     for profile in ("local", "ci"):
         report["profile"] = profile
         for variant in ("standard", "alpine"):
@@ -83,6 +84,9 @@ def check_latency_budget():
                 changed = copy.deepcopy(report)
                 changed["samples"][0][scenario]["p95_ms"] = 500.01
                 rejects(performance.evaluate, policy, changed)
+            changed = copy.deepcopy(report)
+            changed["samples"][0]["idle"]["memory_bytes"] = 50000001
+            rejects(performance.evaluate, policy, changed)
 
 
 def check_budgets():
@@ -220,7 +224,7 @@ def check_runner_cpu_allowances():
 
 
 if __name__ == "__main__":
-    check_latency_budget()
+    check_policy_boundaries()
     check_budgets()
     check_incomplete_and_policy_tampering()
     check_fixed_reference()

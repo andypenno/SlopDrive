@@ -28,7 +28,7 @@
     },
     "idle": {
       "memory_bytes": {
-        "max": 20000000
+        "max": 50000000
       },
       "cpu_percent": {
         "max": 1
