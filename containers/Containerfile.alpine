@@ -1,4 +1,4 @@
-FROM rust:1.99-alpine3.23 AS build
+FROM rust:1.99-alpine3.23 AS buil
 WORKDIR /src
 RUN apk add --no-cache musl-dev
 COPY Cargo.toml Cargo.lock ./
@@ -6,7 +6,7 @@ COPY src ./src
 COPY static ./static
 RUN cargo build --release --locked && strip /src/target/release/slopbox
 
-FROM alpine:3.23
+FROM docker.io/library/alpine:3.23
 RUN addgroup -g 10001 slopbox && adduser -D -H -u 10001 -G slopbox slopbox \
     && mkdir /data && chown slopbox:slopbox /data
 COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox
