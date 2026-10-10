@@ -42,13 +42,13 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Verified write operations | p95 <= 500 ms, CPU <= 12 ms/op, throughput >= 70 op/s |
 | Rejection operations | p95 <= 500 ms, CPU <= 4 ms/op, throughput >= 150 op/s |
 
-In addition, CPU cost cannot exceed twice its fixed reference allowance, and throughput cannot fall below half its measured reference. CPU allowances are shared across CI and local profiles because runner hardware varies. Standard read/write/rejection allowances are 1/5/2 ms per operation; Alpine allowances are 2/7/2 ms. The absolute CPU caps also apply. Throughput references remain profile-specific. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
+In addition, CPU cost cannot exceed twice its fixed reference allowance. CPU allowances are shared across CI and local profiles because runner hardware varies. Standard read/write/rejection allowances are 1/5/2 ms per operation; Alpine allowances are 2/7/2 ms. The absolute CPU caps also apply. Throughput uses only the absolute floors in the table; profile-specific throughput references remain calibration data. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
 
 MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
 
 Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across those initial runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The initial size and memory caps allowed at least 40% headroom. The initial 100 ms latency cap allowed 88% above the worst write p95 of 53.3 ms. These measurements describe the filesystem backend, not current database headroom. The policy preserves initial calibration metadata and records CPU allowance revisions separately.
 
-Workload p95 latency now has a 500 ms cap on every repetition. Hosted-runner PR #14 run `38052106658` measured standard write p95 values of 112.2, 14.4, and 38.6 ms with CPU costs of 1.68 to 1.72 ms per operation. The higher latency cap allows elapsed-time variation without changing CPU or throughput limits. Shared-host contention can still exceed it, so a failure requires diagnosis rather than proving a code defect.
+Workload p95 latency has a 500 ms cap on every repetition. Hosted-runner PR #14 run `38052106658` measured standard write p95 values of 112.2, 14.4, and 38.6 ms with CPU costs of 1.68 to 1.72 ms per operation. The latency cap allows elapsed-time variation; CPU cost and absolute throughput floors remain separate checks. Shared-host contention can still exceed the cap, so a failure requires diagnosis rather than proving a code defect.
 
 SQLite PR #15 run `38053261871` measured peak idle memory of 20.71 MB. The 50 MB idle cap allows feature growth while keeping the 128 MB busy-memory cap separate.
 
