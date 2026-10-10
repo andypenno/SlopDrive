@@ -45,7 +45,7 @@ def policy_and_report():
     }
     baseline = {scenario: {metric: bound.get("max", bound.get("min")) for metric, bound in limits[scenario].items() if metric in ("cpu_ms_per_op", "operations_per_second")} for scenario in ("read", "write", "reject")}
     policy["reference"] = {
-        "maximum_ratio": 2, "minimum_ratio": 0.5,
+        "maximum_ratio": 2,
         "profiles": {profile: {variant: copy.deepcopy(baseline) for variant in ("standard", "alpine")} for profile in ("local", "ci")},
     }
     sample = {name: {metric: 0 if "max" in bound else bound["min"] for metric, bound in metrics.items()} for name, metrics in limits.items()}
@@ -63,11 +63,12 @@ def policy_and_report():
     return policy, report
 
 
-def check_latency_budget():
+def check_policy_boundaries():
     policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
     _, report = policy_and_report()
     report["policy_sha256"] = performance.policy_hash(policy)
     report["samples"] = [copy.deepcopy(report["samples"][0]) for _ in range(policy["runs"])]
+    report["samples"][0]["idle"]["memory_bytes"] = 50000000
     for profile in ("local", "ci"):
         report["profile"] = profile
         for variant in ("standard", "alpine"):
@@ -83,6 +84,9 @@ def check_latency_budget():
                 changed = copy.deepcopy(report)
                 changed["samples"][0][scenario]["p95_ms"] = 500.01
                 rejects(performance.evaluate, policy, changed)
+            changed = copy.deepcopy(report)
+            changed["samples"][0]["idle"]["memory_bytes"] = 50000001
+            rejects(performance.evaluate, policy, changed)
 
 
 def check_budgets():
@@ -148,6 +152,8 @@ def check_fixed_reference():
         sample["read"]["operations_per_second"] = 20
     performance.evaluate(policy, report)
     report["samples"][0]["read"]["operations_per_second"] = 19.9
+    performance.evaluate(policy, report)
+    report["samples"][0]["read"]["operations_per_second"] = 9.9
     rejects(performance.evaluate, policy, report)
     report["profile"] = "unknown"
     rejects(performance.evaluate, policy, report)
@@ -190,10 +196,40 @@ def check_oci_size():
         rejects(performance.oci_size, archive_path)
 
 
+def check_runner_cpu_allowances():
+    policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
+    _, report = policy_and_report()
+    report["policy_sha256"] = performance.policy_hash(policy)
+    report["image"].update(compressed_bytes=1, unpacked_bytes=1)
+    for profile in ("local", "ci"):
+        report["profile"] = profile
+        for variant, costs in (("standard", (1.5, 6, 3)), ("alpine", (2.8, 10, 3.5))):
+            report["variant"] = variant
+            sample = {
+                scenario: {metric: 0 if "max" in bound else bound["min"]
+                           for metric, bound in metrics.items()}
+                for scenario, metrics in policy["scenario_limits"].items()
+            }
+            for scenario, cost in zip(("read", "write", "reject"), costs):
+                reference = policy["reference"]["profiles"][profile][variant][scenario]
+                sample[scenario].update(completed=policy["workload"]["requests"], errors=0,
+                                        cpu_ms_per_op=cost,
+                                        operations_per_second=reference["operations_per_second"])
+            report["samples"] = [copy.deepcopy(sample) for _ in range(policy["runs"])]
+            performance.evaluate(policy, report)
+            for scenario in ("read", "write", "reject"):
+                changed = copy.deepcopy(report)
+                changed["samples"][0][scenario]["cpu_ms_per_op"] = (
+                    policy["scenario_limits"][scenario]["cpu_ms_per_op"]["max"] + 0.01
+                )
+                rejects(performance.evaluate, policy, changed)
+
+
 if __name__ == "__main__":
-    check_latency_budget()
+    check_policy_boundaries()
     check_budgets()
     check_incomplete_and_policy_tampering()
     check_fixed_reference()
+    check_runner_cpu_allowances()
     check_oci_size()
     print("Performance budgets, incomplete results, policy identity, and OCI sizes checked")

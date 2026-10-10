@@ -3,7 +3,7 @@ use crate::*;
 
 #[tokio::test]
 async fn published_pages_use_an_opaque_origin_with_scripts_enabled() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, saved) = fixture
         .post_html(
             "/upload",
@@ -33,7 +33,7 @@ use axum::http::Method;
 
 #[tokio::test]
 async fn auth_precedes_body_parsing_and_public_reads_need_no_key() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (status, _) = fixture
         .json(request(
             Method::POST,
@@ -85,7 +85,7 @@ async fn auth_precedes_body_parsing_and_public_reads_need_no_key() {
 
 #[tokio::test]
 async fn http_upload_update_retry_versions_and_public_retrieval() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let first = b"<html>first</html>";
     let second = b"<html>second</html>";
     let (status, created) = fixture.post_html("/upload", first).await;
@@ -164,7 +164,7 @@ async fn http_upload_update_retry_versions_and_public_retrieval() {
 
 #[tokio::test]
 async fn http_rejects_unknown_pages_versions_and_bad_uploads() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let missing_id = "0".repeat(32);
     for uri in [
         "/not-an-id".to_owned(),
@@ -234,7 +234,7 @@ async fn http_rejects_unknown_pages_versions_and_bad_uploads() {
 
 #[tokio::test]
 async fn exact_content_limit_counts_utf8_bytes_and_is_publicly_readable() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let content = format!("<p>{}x</p>", "é".repeat((MAX_HTML_BYTES - 8) / 2));
     assert_eq!(content.len(), MAX_HTML_BYTES);
     let (status, created) = fixture.post_html("/upload", content.as_bytes()).await;
@@ -253,17 +253,12 @@ async fn exact_content_limit_counts_utf8_bytes_and_is_publicly_readable() {
         .post_html("/upload", format!("{content}x").as_bytes())
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        1
-    );
+    assert_eq!(fixture.db.upload_count().await, 1);
 }
 
 #[tokio::test]
 async fn malformed_multipart_headers_and_truncated_fields_are_rejected() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     for body in [
         b"--testboundary\r\nnot-a-header\r\n".as_slice(),
         b"--testboundary\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: text/html\r\n\r\n<p>x</p>".as_slice(),
@@ -286,7 +281,7 @@ async fn malformed_multipart_headers_and_truncated_fields_are_rejected() {
 
 #[tokio::test]
 async fn malformed_authorization_and_absent_listing_routes_reject_access() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     for value in [
         HeaderValue::from_static("Basic key"),
         HeaderValue::from_str(&format!("Bearer {} ", fixture.key)).unwrap(),
@@ -327,7 +322,7 @@ async fn malformed_authorization_and_absent_listing_routes_reject_access() {
 
 #[tokio::test]
 async fn malformed_updates_preserve_latest_content_and_history() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let content = b"<p>original</p>";
     let (_, saved) = fixture.post_html("/upload", content).await;
     let id = saved["upload_id"].as_str().unwrap();
@@ -345,7 +340,7 @@ async fn malformed_updates_preserve_latest_content_and_history() {
             ))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(fixture.state.storage.get(id, None).unwrap(), content);
-        assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
+        assert_eq!(fixture.state.storage.get(id, None).await.unwrap(), content);
+        assert_eq!(fixture.state.storage.versions(id).await.unwrap().len(), 1);
     }
 }

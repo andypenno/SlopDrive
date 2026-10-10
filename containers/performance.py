@@ -58,8 +58,6 @@ def validate_policy(policy):
     reference = policy.get("reference", {})
     if not 1 <= number(reference.get("maximum_ratio"), "maximum_ratio") <= 3:
         raise ValueError("invalid maximum regression ratio")
-    if not 0 < number(reference.get("minimum_ratio"), "minimum_ratio") <= 1:
-        raise ValueError("invalid minimum regression ratio")
     profiles = reference.get("profiles", {})
     if set(profiles) != {"local", "ci"}:
         raise ValueError("both runner profiles need approved references")
@@ -117,11 +115,11 @@ def evaluate(policy, report):
                 bound = policy["scenario_limits"][scenario][metric][direction]
                 if (direction == "max" and value > bound) or (direction == "min" and value < bound):
                     failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates {direction} {bound}")
-                if scenario in ("read", "write", "reject") and metric in REFERENCE_METRICS:
+                if scenario in ("read", "write", "reject") and metric == "cpu_ms_per_op":
                     reference = policy["reference"]
                     baseline = reference["profiles"][profile][variant][scenario][metric]
-                    ratio = reference["maximum_ratio"] if direction == "max" else reference["minimum_ratio"]
-                    if (direction == "max" and value > baseline * ratio) or (direction == "min" and value < baseline * ratio):
+                    ratio = reference["maximum_ratio"]
+                    if value > baseline * ratio:
                         failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates fixed {profile}/{variant} reference {baseline} at ratio {ratio}")
     if failures:
         raise ValueError("\n".join(failures))

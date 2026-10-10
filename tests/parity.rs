@@ -5,8 +5,186 @@ use axum::http::Method;
 use serde_json::Value;
 
 #[tokio::test]
+async fn invalid_recorded_timestamps_fail_closed_on_both_transports() {
+    let fixture = TestApp::new().await;
+    let content = b"<p>preserved</p>";
+    let (_, saved) = fixture.post_html("/upload", content).await;
+    let id = saved["upload_id"].as_str().unwrap();
+    fixture.db.corrupt_timestamp(id).await;
+    assert!(matches!(
+        fixture.state.storage.versions(id).await,
+        Err(StoreError::InvalidMetadata)
+    ));
+    assert!(matches!(
+        fixture.state.storage.update(id, content).await,
+        Err(StoreError::InvalidMetadata)
+    ));
+    let (status, error) = fixture
+        .json(request(
+            Method::GET,
+            &format!("/upload/{id}/versions"),
+            Some(&fixture.key),
+            None,
+            Body::empty(),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error["error"], "internal error");
+    for (name, arguments) in [
+        ("list_versions", json!({"upload_id":id})),
+        (
+            "update_html",
+            json!({"upload_id":id,"content":"<p>preserved</p>"}),
+        ),
+    ] {
+        let result = fixture.tool(1, name, arguments).await;
+        assert_eq!(result["isError"], true);
+        assert_eq!(result["content"][0]["text"], "internal error");
+    }
+    assert_eq!(
+        fixture.post_html(&format!("/upload/{id}"), content).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(fixture.state.storage.get(id, None).await.unwrap(), content);
+    assert_eq!(
+        fixture
+            .state
+            .storage
+            .get(id, saved["content_hash"].as_str())
+            .await
+            .unwrap(),
+        content
+    );
+    assert_eq!(fixture.db.upload_count().await, 1);
+}
+
+#[tokio::test]
+async fn database_write_failures_preserve_latest_and_leave_no_partial_uploads() {
+    for mcp in [false, true] {
+        let fixture = TestApp::new().await;
+        let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
+        let id = saved["upload_id"].as_str().unwrap();
+        fixture
+            .db
+            .reject_versions(saved["content_hash"].as_str().unwrap())
+            .await;
+        if mcp {
+            for (name, arguments) in [
+                (
+                    "update_html",
+                    json!({"upload_id":id,"content":"<p>changed</p>"}),
+                ),
+                ("upload_html", json!({"content":"<p>changed</p>"})),
+            ] {
+                let result = fixture.tool(1, name, arguments).await;
+                assert_eq!(result["isError"], true);
+                assert_eq!(result["content"][0]["text"], "internal error");
+            }
+        } else {
+            for path in [format!("/upload/{id}"), "/upload".to_owned()] {
+                let (status, error) = fixture.post_html(&path, b"<p>changed</p>").await;
+                assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+                assert_eq!(error["error"], "internal error");
+            }
+        }
+        assert_eq!(fixture.db.upload_count().await, 1);
+        assert_eq!(fixture.state.storage.versions(id).await.unwrap().len(), 1);
+        assert_eq!(
+            fixture.state.storage.get(id, None).await.unwrap(),
+            b"<p>original</p>"
+        );
+    }
+}
+
+#[tokio::test]
+async fn corrupt_content_fails_closed_and_a_retry_repairs_bytes_without_new_metadata() {
+    for mcp in [false, true] {
+        let fixture = TestApp::new().await;
+        let (_, saved) = fixture.post_html("/upload", b"<p>good</p>").await;
+        let id = saved["upload_id"].as_str().unwrap();
+        let timestamp = fixture.state.storage.versions(id).await.unwrap()[0].created_at;
+        fixture.db.corrupt_content(id, b"<p>evil</p>").await;
+        let (status, error) = fixture
+            .json(request(
+                Method::GET,
+                &format!("/{id}"),
+                None,
+                None,
+                Body::empty(),
+            ))
+            .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error["error"], "internal error");
+        if mcp {
+            assert_eq!(
+                fixture
+                    .tool(
+                        1,
+                        "update_html",
+                        json!({"upload_id":id,"content":"<p>good</p>"})
+                    )
+                    .await["isError"],
+                false
+            );
+        } else {
+            assert_eq!(
+                fixture
+                    .post_html(&format!("/upload/{id}"), b"<p>good</p>")
+                    .await
+                    .0,
+                StatusCode::OK
+            );
+        }
+        let history = fixture.state.storage.versions(id).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].created_at, timestamp);
+        assert_eq!(
+            fixture.state.storage.get(id, None).await.unwrap(),
+            b"<p>good</p>"
+        );
+    }
+}
+
+#[tokio::test]
+async fn key_revocation_and_database_outages_fail_closed_on_both_transports() {
+    let fixture = TestApp::new().await;
+    let id = &fixture.key[3..19];
+    fixture.state.keys.revoke(id).await.unwrap();
+    assert_eq!(
+        fixture.post_html("/upload", b"<p>x</p>").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        fixture
+            .mcp(json!({"jsonrpc":"2.0","id":1,"method":"ping"}))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let fixture = TestApp::new().await;
+    let (_, saved) = fixture.post_html("/upload", b"<p>x</p>").await;
+    fixture.state.storage.close().await;
+    let (status, error) = fixture
+        .json(request(
+            Method::GET,
+            &format!("/{}", saved["upload_id"].as_str().unwrap()),
+            None,
+            None,
+            Body::empty(),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error["error"], "internal error");
+    let (status, error) = fixture
+        .mcp(json!({"jsonrpc":"2.0","id":1,"method":"ping"}))
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error["error"], "internal error");
+}
+
+#[tokio::test]
 async fn protected_transports_accept_only_the_configured_browser_origin() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, saved) = fixture.post_html("/upload", b"<p>x</p>").await;
     let id = saved["upload_id"].as_str().unwrap();
     for (method, uri, body) in [
@@ -48,7 +226,7 @@ async fn protected_transports_accept_only_the_configured_browser_origin() {
 
 #[tokio::test]
 async fn bearer_scheme_and_challenges_follow_http_rules_on_both_transports() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
     let id = saved["upload_id"].as_str().unwrap();
     for (method, uri, body) in [
@@ -82,43 +260,6 @@ async fn bearer_scheme_and_challenges_follow_http_rules_on_both_transports() {
 }
 
 #[tokio::test]
-async fn failed_content_writes_leave_no_temporary_files_over_both_transports() {
-    for mcp in [false, true] {
-        let fixture = TestApp::new();
-        let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
-        let id = saved["upload_id"].as_str().unwrap();
-        let directory = fixture.dir.path().join("uploads").join(id);
-        let content = "<p>replacement</p>";
-        std::fs::create_dir(directory.join(format!("{}.html", helpers::hash(content.as_bytes()))))
-            .unwrap();
-        if mcp {
-            let result = fixture
-                .tool(1, "update_html", json!({"upload_id":id,"content":content}))
-                .await;
-            assert_eq!(result["isError"], true);
-        } else {
-            assert_eq!(
-                fixture
-                    .post_html(&format!("/upload/{id}"), content.as_bytes())
-                    .await
-                    .0,
-                StatusCode::INTERNAL_SERVER_ERROR
-            );
-        }
-        let names: Vec<_> = std::fs::read_dir(directory)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        assert!(
-            names
-                .iter()
-                .all(|name| !name.to_string_lossy().contains(".tmp-")),
-            "{names:?}"
-        );
-    }
-}
-
-#[tokio::test]
 async fn uncertain_commit_has_a_shared_redacted_public_message() {
     let make_error = || {
         AppError::from(StoreError::CommitUncertain(std::io::Error::other(
@@ -140,160 +281,9 @@ async fn uncertain_commit_has_a_shared_redacted_public_message() {
     assert_eq!(mcp["isError"], true);
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn directory_access_failure_preserves_latest_over_both_transports() {
-    use std::os::unix::fs::PermissionsExt;
-    for mcp in [false, true] {
-        let fixture = TestApp::new();
-        let (_, first) = fixture.post_html("/upload", b"<p>first</p>").await;
-        let id = first["upload_id"].as_str().unwrap();
-        fixture
-            .post_html(&format!("/upload/{id}"), b"<p>second</p>")
-            .await;
-        let directory = fixture.dir.path().join("uploads").join(id);
-        let metadata = std::fs::read(directory.join("metadata.json")).unwrap();
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o300)).unwrap();
-        let failed = if mcp {
-            fixture
-                .tool(
-                    1,
-                    "update_html",
-                    json!({"upload_id":id,"content":"<p>first</p>"}),
-                )
-                .await["isError"]
-                == true
-        } else {
-            fixture
-                .post_html(&format!("/upload/{id}"), b"<p>first</p>")
-                .await
-                .0
-                == StatusCode::INTERNAL_SERVER_ERROR
-        };
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(failed);
-        assert_eq!(
-            std::fs::read(directory.join("metadata.json")).unwrap(),
-            metadata
-        );
-        let (status, _, content) = fixture
-            .send(request(
-                Method::GET,
-                &format!("/{id}"),
-                None,
-                None,
-                Body::empty(),
-            ))
-            .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(content, b"<p>second</p>");
-    }
-}
-
-#[tokio::test]
-async fn retries_and_restores_repair_missing_content_over_both_transports() {
-    for mcp in [false, true] {
-        for historical in [false, true] {
-            let fixture = TestApp::new();
-            let content = b"<p>original</p>";
-            let (_, created) = fixture.post_html("/upload", content).await;
-            let id = created["upload_id"].as_str().unwrap();
-            if historical {
-                fixture
-                    .post_html(&format!("/upload/{id}"), b"<p>newer</p>")
-                    .await;
-            }
-            let path = fixture.dir.path().join("uploads").join(id);
-            let hash = created["content_hash"].as_str().unwrap();
-            std::fs::rename(path.join(format!("{hash}.html")), path.join("hidden.html")).unwrap();
-            if mcp {
-                let result = fixture
-                    .tool(
-                        1,
-                        "update_html",
-                        json!({"upload_id":id,"content":"<p>original</p>"}),
-                    )
-                    .await;
-                assert_eq!(result["isError"], false);
-                assert_eq!(result["structuredContent"], created);
-            } else {
-                let (status, updated) = fixture.post_html(&format!("/upload/{id}"), content).await;
-                assert_eq!(status, StatusCode::OK);
-                assert_eq!(updated, created);
-            }
-            for uri in [format!("/{id}"), format!("/{id}?q={hash}")] {
-                let (status, _, bytes) = fixture
-                    .send(request(Method::GET, &uri, None, None, Body::empty()))
-                    .await;
-                assert_eq!(status, StatusCode::OK);
-                assert_eq!(bytes, content);
-            }
-            let (_, versions) = fixture
-                .json(request(
-                    Method::GET,
-                    &format!("/upload/{id}/versions"),
-                    Some(&fixture.key),
-                    None,
-                    Body::empty(),
-                ))
-                .await;
-            assert_eq!(
-                versions["versions"].as_array().unwrap().len(),
-                1 + usize::from(historical)
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn key_revocation_and_corrupt_storage_fail_closed() {
-    let fixture = TestApp::new();
-    let (status, created) = fixture.post_html("/upload", b"<html>x</html>").await;
-    assert_eq!(status, StatusCode::OK);
-    let id = created["upload_id"].as_str().unwrap();
-    let metadata = fixture
-        .dir
-        .path()
-        .join("uploads")
-        .join(id)
-        .join("metadata.json");
-    std::fs::write(metadata, b"not json").unwrap();
-    let (status, body) = fixture
-        .json(request(
-            Method::GET,
-            &format!("/{id}"),
-            None,
-            None,
-            Body::empty(),
-        ))
-        .await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(body["error"], "internal error");
-    let result = fixture
-        .tool(1, "get_html_url", json!({"upload_id":id}))
-        .await;
-    assert_eq!(result["isError"], true);
-    assert_eq!(result["content"][0]["text"], "internal error");
-
-    let key_id = fixture.key[3..19].to_owned();
-    fixture.state.keys.revoke(&key_id).unwrap();
-    let (status, _) = fixture.post_html("/upload", b"<html>x</html>").await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, _) = fixture
-        .json(request(
-            Method::POST,
-            "/mcp",
-            Some(&fixture.key),
-            Some("application/json"),
-            "{}",
-        ))
-        .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
 #[tokio::test]
 async fn body_limits_reject_without_writes_and_authentication_still_runs_first() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     for (uri, content_type, size) in [
         (
             "/upload",
@@ -334,244 +324,7 @@ async fn body_limits_reject_without_writes_and_authentication_still_runs_first()
             }
         }
     }
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        0
-    );
-}
-
-#[tokio::test]
-async fn missing_content_and_invalid_latest_metadata_fail_as_not_found() {
-    let fixture = TestApp::new();
-    let (_, created) = fixture.post_html("/upload", b"<p>x</p>").await;
-    let id = created["upload_id"].as_str().unwrap();
-    let path = fixture.dir.path().join("uploads").join(id);
-    let content_path = path.join(format!(
-        "{}.html",
-        created["content_hash"].as_str().unwrap()
-    ));
-    std::fs::rename(&content_path, path.join("hidden.html")).unwrap();
-    let metadata_path = path.join("metadata.json");
-    let mut metadata: Value =
-        serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
-    for latest in [
-        created["content_hash"].clone(),
-        json!("bad"),
-        json!("0".repeat(64)),
-    ] {
-        if latest != created["content_hash"] {
-            std::fs::rename(path.join("hidden.html"), &content_path).ok();
-            std::fs::write(
-                path.join(format!("{}.html", latest.as_str().unwrap())),
-                b"<p>unlisted</p>",
-            )
-            .unwrap();
-        }
-        metadata["latest"] = latest;
-        std::fs::write(&metadata_path, metadata.to_string()).unwrap();
-        let (status, body) = fixture
-            .json(request(
-                Method::GET,
-                &format!("/{id}"),
-                None,
-                None,
-                Body::empty(),
-            ))
-            .await;
-        let missing = metadata["latest"] == created["content_hash"];
-        let message = if missing {
-            "not found"
-        } else {
-            "internal error"
-        };
-        assert_eq!(
-            status,
-            if missing {
-                StatusCode::NOT_FOUND
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-        );
-        assert_eq!(body, json!({"error":message}));
-        let result = fixture
-            .tool(1, "get_html_url", json!({"upload_id":id}))
-            .await;
-        assert_eq!(result["isError"], true);
-        assert_eq!(result["content"][0]["text"], message);
-    }
-}
-
-#[tokio::test]
-async fn storage_write_and_read_failures_are_redacted_over_http_and_mcp() {
-    let fixture = TestApp::new();
-    let uploads = fixture.dir.path().join("uploads");
-    std::fs::rename(&uploads, fixture.dir.path().join("original-uploads")).unwrap();
-    std::fs::write(&uploads, b"keep").unwrap();
-    let (status, response) = fixture.post_html("/upload", b"<p>x</p>").await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(response, json!({"error":"internal error"}));
-    let response = fixture
-        .tool(1, "upload_html", json!({"content":"<p>x</p>"}))
-        .await;
-    assert_eq!(response["isError"], true);
-    assert_eq!(response["content"][0]["text"], "internal error");
-    assert_eq!(std::fs::read(&uploads).unwrap(), b"keep");
-
-    let fixture = TestApp::new();
-    let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
-    let id = saved["upload_id"].as_str().unwrap();
-    let path = fixture.dir.path().join("uploads").join(id);
-    let content_path = path.join(format!("{}.html", saved["content_hash"].as_str().unwrap()));
-    std::fs::rename(&content_path, path.join("original.html")).unwrap();
-    std::fs::create_dir(&content_path).unwrap();
-    let (status, response) = fixture
-        .json(request(
-            Method::GET,
-            &format!("/{id}"),
-            None,
-            None,
-            Body::empty(),
-        ))
-        .await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(response, json!({"error":"internal error"}));
-    let response = fixture
-        .tool(2, "get_html_url", json!({"upload_id":id}))
-        .await;
-    assert_eq!(response["isError"], true);
-    assert_eq!(response["content"][0]["text"], "internal error");
-    assert_eq!(
-        std::fs::read(path.join("original.html")).unwrap(),
-        b"<p>original</p>"
-    );
-}
-
-#[tokio::test]
-async fn inconsistent_metadata_is_rejected_before_listing_or_mutation() {
-    for mutation in 0..7 {
-        let fixture = TestApp::new();
-        let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
-        let id = saved["upload_id"].as_str().unwrap();
-        let path = fixture
-            .dir
-            .path()
-            .join("uploads")
-            .join(id)
-            .join("metadata.json");
-        let mut metadata: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        match mutation {
-            0 => metadata["latest"] = json!("0".repeat(64)),
-            1 => metadata["versions"][0]["content_hash"] = json!("not-a-hash"),
-            2 => {
-                let duplicate = metadata["versions"][0].clone();
-                metadata["versions"].as_array_mut().unwrap().push(duplicate);
-            }
-            3 => metadata["versions"] = json!([]),
-            4 => metadata["versions"][0]["size_bytes"] = json!(0),
-            5 => metadata["versions"][0]["size_bytes"] = json!(MAX_HTML_BYTES + 1),
-            _ => {
-                let upper = saved["content_hash"].as_str().unwrap().to_ascii_uppercase();
-                metadata["latest"] = json!(upper);
-                metadata["versions"][0]["content_hash"] = json!(upper);
-            }
-        }
-        let corrupt = metadata.to_string();
-        std::fs::write(&path, &corrupt).unwrap();
-        let (status, body) = fixture
-            .json(request(
-                Method::GET,
-                &format!("/upload/{id}/versions"),
-                Some(&fixture.key),
-                None,
-                Body::empty(),
-            ))
-            .await;
-        assert_eq!(
-            status,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "mutation {mutation}"
-        );
-        assert_eq!(body["error"], "internal error");
-        for (name, args) in [
-            ("list_versions", json!({"upload_id":id})),
-            (
-                "update_html",
-                json!({"upload_id":id,"content":"<p>replacement</p>"}),
-            ),
-        ] {
-            let result = fixture.tool(1, name, args).await;
-            assert_eq!(result["isError"], true, "{mutation} {name}");
-            assert_eq!(result["content"][0]["text"], "internal error");
-        }
-        assert_eq!(
-            fixture
-                .post_html(&format!("/upload/{id}"), b"<p>replacement</p>")
-                .await
-                .0,
-            StatusCode::INTERNAL_SERVER_ERROR
-        );
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), corrupt);
-    }
-}
-
-#[cfg(unix)]
-#[tokio::test(flavor = "current_thread")]
-async fn slow_key_reads_do_not_block_the_async_runtime() {
-    use std::io::Write;
-    use std::time::Duration;
-    for mcp in [false, true] {
-        let fixture = TestApp::new();
-        let path = fixture
-            .dir
-            .path()
-            .join("keys")
-            .join(format!("{}.json", &fixture.key[3..19]));
-        let record = std::fs::read(&path).unwrap();
-        std::fs::rename(&path, path.with_extension("original")).unwrap();
-        assert!(
-            std::process::Command::new("mkfifo")
-                .arg(&path)
-                .status()
-                .unwrap()
-                .success()
-        );
-        let (heartbeat, receiver) = std::sync::mpsc::channel();
-        let writer = std::thread::spawn(move || {
-            let responsive = receiver.recv_timeout(Duration::from_secs(1)).is_ok();
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open(path)
-                .unwrap()
-                .write_all(&record)
-                .unwrap();
-            responsive
-        });
-        let req = if mcp {
-            request(
-                Method::POST,
-                "/mcp",
-                Some(&fixture.key),
-                Some("application/json"),
-                json!({"jsonrpc":"2.0","id":1,"method":"ping"}).to_string(),
-            )
-        } else {
-            request(
-                Method::POST,
-                "/upload",
-                Some(&fixture.key),
-                Some("multipart/form-data; boundary=testboundary"),
-                multipart(&[("file", "text/html", b"<p>x</p>")]),
-            )
-        };
-        let (response, ()) = tokio::join!(fixture.send(req), async {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            let _ = heartbeat.send(());
-        });
-        assert_eq!(response.0, StatusCode::OK);
-        assert!(writer.join().unwrap(), "authentication blocked the runtime");
-    }
+    assert_eq!(fixture.db.upload_count().await, 0);
 }
 
 #[tokio::test]
@@ -609,7 +362,7 @@ async fn every_application_error_has_one_public_message_on_both_transports() {
 
 #[tokio::test]
 async fn successful_tools_match_http_metadata_and_their_text_results() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let created = fixture
         .tool(1, "upload_html", json!({"content":"<p>first</p>"}))
         .await;
@@ -641,7 +394,7 @@ async fn successful_tools_match_http_metadata_and_their_text_results() {
         ))
         .await;
     assert_eq!(history["structuredContent"], http);
-    let persisted = fixture.state.storage.versions(id).unwrap();
+    let persisted = fixture.state.storage.versions(id).await.unwrap();
     assert_eq!(persisted.len(), 2);
     for (actual, version) in http["versions"].as_array().unwrap().iter().zip(&persisted) {
         assert_eq!(
@@ -672,12 +425,12 @@ async fn successful_tools_match_http_metadata_and_their_text_results() {
 #[tokio::test]
 async fn publisher_keys_have_instance_wide_authority_on_both_transports() {
     for mcp in [false, true] {
-        let mut fixture = TestApp::new();
+        let mut fixture = TestApp::new().await;
         let (_, saved) = fixture
             .post_html("/upload", b"<p>first publisher</p>")
             .await;
         let id = saved["upload_id"].as_str().unwrap();
-        let (_, second_key) = fixture.state.keys.create().unwrap();
+        let (_, second_key) = fixture.state.keys.create().await.unwrap();
         fixture.key = second_key;
         if mcp {
             assert_eq!(
@@ -719,104 +472,5 @@ async fn publisher_keys_have_instance_wide_authority_on_both_transports() {
             assert_eq!(status, StatusCode::OK);
             assert_eq!(history["versions"].as_array().unwrap().len(), 2);
         }
-    }
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn latest_retries_still_preflight_and_confirm_directory_durability() {
-    use std::os::unix::fs::PermissionsExt;
-    for mcp in [false, true] {
-        let fixture = TestApp::new();
-        let (_, saved) = fixture.post_html("/upload", b"<p>same</p>").await;
-        let id = saved["upload_id"].as_str().unwrap();
-        let path = fixture.dir.path().join("uploads").join(id);
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o300)).unwrap();
-        let failed = if mcp {
-            fixture
-                .tool(
-                    1,
-                    "update_html",
-                    json!({"upload_id":id,"content":"<p>same</p>"}),
-                )
-                .await["isError"]
-                == true
-        } else {
-            fixture
-                .post_html(&format!("/upload/{id}"), b"<p>same</p>")
-                .await
-                .0
-                == StatusCode::INTERNAL_SERVER_ERROR
-        };
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(failed, "retry acknowledged without confirming durability");
-        assert_eq!(fixture.state.storage.get(id, None).unwrap(), b"<p>same</p>");
-    }
-}
-
-#[tokio::test]
-async fn metadata_publication_failures_clean_unreachable_data_on_both_transports() {
-    for mcp in [false, true] {
-        let fixture = TestApp::new();
-        let fail = || {
-            StoreError::Io(std::io::Error::other(
-                "injected metadata publication failure",
-            ))
-        };
-        *fixture.state.storage.metadata_failure.lock().unwrap() = Some(fail());
-        if mcp {
-            assert_eq!(
-                fixture
-                    .tool(1, "upload_html", json!({"content":"<p>failed</p>"}))
-                    .await["isError"],
-                true
-            );
-        } else {
-            assert_eq!(
-                fixture.post_html("/upload", b"<p>failed</p>").await.0,
-                StatusCode::INTERNAL_SERVER_ERROR
-            );
-        }
-        assert_eq!(
-            std::fs::read_dir(fixture.dir.path().join("uploads"))
-                .unwrap()
-                .count(),
-            0
-        );
-        let (_, saved) = fixture.post_html("/upload", b"<p>original</p>").await;
-        let id = saved["upload_id"].as_str().unwrap();
-        *fixture.state.storage.metadata_failure.lock().unwrap() = Some(fail());
-        if mcp {
-            assert_eq!(
-                fixture
-                    .tool(
-                        2,
-                        "update_html",
-                        json!({"upload_id":id,"content":"<p>unpublished</p>"})
-                    )
-                    .await["isError"],
-                true
-            );
-        } else {
-            assert_eq!(
-                fixture
-                    .post_html(&format!("/upload/{id}"), b"<p>unpublished</p>")
-                    .await
-                    .0,
-                StatusCode::INTERNAL_SERVER_ERROR
-            );
-        }
-        let directory = fixture.dir.path().join("uploads").join(id);
-        assert!(
-            !directory
-                .join(format!("{}.html", helpers::hash(b"<p>unpublished</p>")))
-                .exists()
-        );
-        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 2);
-        assert_eq!(
-            fixture.state.storage.get(id, None).unwrap(),
-            b"<p>original</p>"
-        );
-        assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
     }
 }

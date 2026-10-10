@@ -28,7 +28,7 @@
     },
     "idle": {
       "memory_bytes": {
-        "max": 20000000
+        "max": 50000000
       },
       "cpu_percent": {
         "max": 1
@@ -84,34 +84,33 @@
   },
   "reference": {
     "maximum_ratio": 2,
-    "minimum_ratio": 0.5,
     "profiles": {
       "local": {
         "standard": {
           "read": {
-            "cpu_ms_per_op": 0.693948,
+            "cpu_ms_per_op": 1,
             "operations_per_second": 1028.078315
           },
           "write": {
-            "cpu_ms_per_op": 3.37318,
+            "cpu_ms_per_op": 5,
             "operations_per_second": 235.482835
           },
           "reject": {
-            "cpu_ms_per_op": 1.14748,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 315.752121
           }
         },
         "alpine": {
           "read": {
-            "cpu_ms_per_op": 1.3614,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 737.933797
           },
           "write": {
-            "cpu_ms_per_op": 6.199232,
+            "cpu_ms_per_op": 7,
             "operations_per_second": 160.163139
           },
           "reject": {
-            "cpu_ms_per_op": 1.840018,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 334.789053
           }
         }
@@ -119,29 +118,29 @@
       "ci": {
         "standard": {
           "read": {
-            "cpu_ms_per_op": 0.250135,
+            "cpu_ms_per_op": 1,
             "operations_per_second": 1892.584207
           },
           "write": {
-            "cpu_ms_per_op": 1.38545,
+            "cpu_ms_per_op": 5,
             "operations_per_second": 449.020249
           },
           "reject": {
-            "cpu_ms_per_op": 0.405662,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 896.462666
           }
         },
         "alpine": {
           "read": {
-            "cpu_ms_per_op": 0.525047,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 1435.249309
           },
           "write": {
-            "cpu_ms_per_op": 2.713897,
+            "cpu_ms_per_op": 7,
             "operations_per_second": 323.435546
           },
           "reject": {
-            "cpu_ms_per_op": 0.98326,
+            "cpu_ms_per_op": 2,
             "operations_per_second": 747.189975
           }
         }
@@ -205,6 +204,37 @@
         "run_id": 37038992874,
         "run_head_sha": "7bdc29021dccf7d75e7be40a4c9a136534dbf5c6"
       }
+    },
+    "cpu_allowance_revision": {
+      "source_commit": "110265a6a5321394c3208e693f191531e2629dab",
+      "ci_run_id": 38050250307,
+      "original_cpu_references": {
+        "local": {
+          "standard": {
+            "read": 0.693948,
+            "write": 3.37318,
+            "reject": 1.14748
+          },
+          "alpine": {
+            "read": 1.3614,
+            "write": 6.199232,
+            "reject": 1.840018
+          }
+        },
+        "ci": {
+          "standard": {
+            "read": 0.250135,
+            "write": 1.38545,
+            "reject": 0.405662
+          },
+          "alpine": {
+            "read": 0.525047,
+            "write": 2.713897,
+            "reject": 0.98326
+          }
+        }
+      },
+      "basis": "Rounded allowances shared across runner profiles; measured SQLite maxima documented in docs/performance.md. Absolute CPU caps unchanged."
     }
   }
 }

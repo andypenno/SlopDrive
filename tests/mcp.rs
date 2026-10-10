@@ -5,7 +5,7 @@ use serde_json::Value;
 
 #[tokio::test]
 async fn mcp_protocol_discovery_and_all_tools() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (status, initialized) = fixture
         .mcp(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}))
         .await;
@@ -89,7 +89,7 @@ async fn mcp_protocol_discovery_and_all_tools() {
 
 #[tokio::test]
 async fn mcp_protocol_and_tool_errors_are_reported() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (status, parse_error) = fixture
         .json(request(
             Method::POST,
@@ -149,7 +149,7 @@ async fn mcp_protocol_and_tool_errors_are_reported() {
 
 #[tokio::test]
 async fn mcp_allows_escaped_html_near_the_content_limit() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let content = format!("<html>{}</html>", "\"".repeat(800_000));
     let result = fixture
         .tool(1, "upload_html", json!({"content":content}))
@@ -172,7 +172,7 @@ async fn mcp_allows_escaped_html_near_the_content_limit() {
 
 #[tokio::test]
 async fn mcp_wrong_required_argument_types_and_unknown_versions_are_rejected() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     for (name, arguments) in [
         ("upload_html", json!(null)),
         ("upload_html", json!([])),
@@ -207,7 +207,7 @@ async fn mcp_wrong_required_argument_types_and_unknown_versions_are_rejected() {
 
 #[tokio::test]
 async fn mcp_discovery_advertises_complete_schemas_and_notifications_do_not_write() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, initialized) = fixture
         .mcp(json!({"jsonrpc":"2.0","id":null,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}))
         .await;
@@ -248,12 +248,7 @@ async fn mcp_discovery_advertises_complete_schemas_and_notifications_do_not_writ
     let (status, _, body) = fixture.send(request(Method::POST, "/mcp", Some(&fixture.key), Some("application/json"), json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"upload_html","arguments":{"content":"<p>x</p>"}}}).to_string())).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert!(body.is_empty());
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        0
-    );
+    assert_eq!(fixture.db.upload_count().await, 0);
     for invalid in [
         json!(null),
         json!([]),
@@ -266,20 +261,15 @@ async fn mcp_discovery_advertises_complete_schemas_and_notifications_do_not_writ
 
 #[tokio::test]
 async fn mcp_rejects_undeclared_tool_arguments() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, response) = fixture.mcp(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upload_html","arguments":{"content":"<p>x</p>","typo":1}}})).await;
     assert_eq!(response["error"]["code"], -32602);
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        0
-    );
+    assert_eq!(fixture.db.upload_count().await, 0);
 }
 
 #[tokio::test]
 async fn mcp_argument_validation_applies_to_every_tool_and_field() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let (_, created) = fixture.post_html("/upload", b"<p>x</p>").await;
     let id = created["upload_id"].as_str().unwrap();
     let tools = [
@@ -319,18 +309,13 @@ async fn mcp_argument_validation_applies_to_every_tool_and_field() {
             assert!(response.get("result").is_none());
         }
     }
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        2
-    );
-    assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
+    assert_eq!(fixture.db.upload_count().await, 2);
+    assert_eq!(fixture.state.storage.versions(id).await.unwrap().len(), 1);
 }
 
 #[tokio::test]
 async fn mcp_request_id_and_params_validation_accepts_and_rejects_json_types() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     for id in [json!(null), json!(1), json!("request")] {
         for params in [json!({}), json!([])] {
             let (_, response) = fixture
@@ -358,7 +343,7 @@ async fn mcp_request_id_and_params_validation_accepts_and_rejects_json_types() {
 
 #[tokio::test]
 async fn mcp_batches_use_sse_and_notification_only_posts_have_empty_acknowledgements() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let payload = json!([
         {"jsonrpc":"2.0","id":1,"method":"ping"},
         {"jsonrpc":"2.0","method":"notifications/initialized"},
@@ -402,7 +387,7 @@ async fn mcp_batches_use_sse_and_notification_only_posts_have_empty_acknowledgem
 
 #[tokio::test]
 async fn mcp_rejects_unsolicited_responses_and_initialization_batches_before_writes() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let response = json!({"jsonrpc":"2.0","id":1,"result":{}});
     let upload = json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"upload_html","arguments":{"content":"<p>x</p>"}}});
     for payload in [
@@ -426,17 +411,12 @@ async fn mcp_rejects_unsolicited_responses_and_initialization_batches_before_wri
             StatusCode::BAD_REQUEST
         );
     }
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        0
-    );
+    assert_eq!(fixture.db.upload_count().await, 0);
 }
 
 #[tokio::test]
 async fn mcp_initialize_requires_typed_protocol_capabilities_and_client_info() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let valid = json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}});
     let mut invalid = vec![json!(null), json!([]), json!({})];
     for field in ["protocolVersion", "capabilities", "clientInfo"] {
@@ -481,14 +461,14 @@ async fn mcp_initialize_requires_typed_protocol_capabilities_and_client_info() {
 
 #[tokio::test]
 async fn mcp_borrowed_arguments_preserve_decoded_content_and_absent_defaults() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let content = "<p>\"quoted\"\n\t\u{00e9}\\slash</p>";
     let saved = fixture
         .tool(1, "upload_html", json!({"content":content}))
         .await;
     let id = saved["structuredContent"]["upload_id"].as_str().unwrap();
     assert_eq!(
-        fixture.state.storage.get(id, None).unwrap(),
+        fixture.state.storage.get(id, None).await.unwrap(),
         content.as_bytes()
     );
     for params in [
@@ -505,7 +485,7 @@ async fn mcp_borrowed_arguments_preserve_decoded_content_and_absent_defaults() {
 
 #[tokio::test]
 async fn mcp_discovery_stays_fixed_after_tool_calls() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let discovery = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
     let (_, before) = fixture.mcp(discovery.clone()).await;
     fixture
@@ -519,7 +499,7 @@ async fn mcp_discovery_stays_fixed_after_tool_calls() {
 
 #[tokio::test]
 async fn mcp_limits_exact_decoded_utf8_bytes_and_preserves_content_on_rejection() {
-    let fixture = TestApp::new();
+    let fixture = TestApp::new().await;
     let content = format!("<p>{}x</p>", "é".repeat((MAX_HTML_BYTES - 8) / 2));
     assert_eq!(content.len(), MAX_HTML_BYTES);
     let saved = fixture
@@ -545,58 +525,6 @@ async fn mcp_limits_exact_decoded_utf8_bytes_and_preserves_content_on_rejection(
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(bytes, content.as_bytes());
-    assert_eq!(fixture.state.storage.versions(id).unwrap().len(), 1);
-    assert_eq!(
-        std::fs::read_dir(fixture.dir.path().join("uploads"))
-            .unwrap()
-            .count(),
-        1
-    );
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn url_lookup_rejects_nonregular_content_without_reading_it() {
-    use std::io::Write;
-    let fixture = TestApp::new();
-    let (_, saved) = fixture.post_html("/upload", b"<p>x</p>").await;
-    let id = saved["upload_id"].as_str().unwrap();
-    let path = fixture
-        .dir
-        .path()
-        .join("uploads")
-        .join(id)
-        .join(format!("{}.html", saved["content_hash"].as_str().unwrap()));
-    std::fs::rename(&path, path.with_extension("original")).unwrap();
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&path)
-            .status()
-            .unwrap()
-            .success()
-    );
-    let (finished, receiver) = std::sync::mpsc::channel();
-    let writer = std::thread::spawn(move || {
-        if receiver
-            .recv_timeout(std::time::Duration::from_millis(500))
-            .is_err()
-        {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open(path)
-                .unwrap()
-                .write_all(b"<p>x</p>")
-                .unwrap();
-            false
-        } else {
-            true
-        }
-    });
-    let result = fixture
-        .tool(1, "get_html_url", json!({"upload_id":id}))
-        .await;
-    let _ = finished.send(());
-    let returned_without_reading = writer.join().unwrap();
-    assert_eq!(result["isError"], true);
-    assert!(returned_without_reading);
+    assert_eq!(fixture.state.storage.versions(id).await.unwrap().len(), 1);
+    assert_eq!(fixture.db.upload_count().await, 1);
 }

@@ -35,7 +35,7 @@ docker compose -f containers/compose.yaml run --rm --no-deps slopbox keys list
 docker compose -f containers/compose.yaml run --rm --no-deps slopbox keys revoke KEY_ID
 ```
 
-Revoking a key takes effect without a restart. Back up the data volume to retain your pages and keys.
+Revoking a key takes effect without a restart. SQLite stores pages, history and key hashes in `/data/slopbox.sqlite` by default. PostgreSQL is also supported through environment settings and an [example Compose file](containers/compose.postgres.yaml). See [database configuration and backups](docs/database.md).
 
 To update, change `SLOPBOX_VERSION`, then repeat `pull` and `up -d`. Keep the data volume; `down --volumes` deletes it. Check release notes for storage compatibility before rolling back.
 
@@ -61,7 +61,7 @@ podman build --ignorefile containers/Containerfile.alpine.dockerignore -f contai
 
 Replace `docker` with `podman` in the run commands. The Compose example requires a Compose provider installed for `podman compose`.
 
-History is unlimited. Set filesystem quotas for the mounted data, monitor free space, and plan backups as histories grow. Keep existing versions when a quota is reached; writes can fail until the operator provides more space. Reads and version lists parse the full history, so large histories also increase memory and request work. Configure proxy rate, connection, and request-timeout limits, including public reads. Allow up to 1 MiB + 16 KiB for multipart uploads and 6 MiB + 16 KiB for MCP JSON envelopes. SlopBox bounds each decoded page to 1 MiB and admits at most 16 blocking operations at once.
+History is unlimited. Set filesystem quotas for the mounted data, monitor free space, and plan backups as histories grow. Keep existing versions when a quota is reached; writes can fail until the operator provides more space. Version lists load the full history metadata, so large histories increase memory and request work. Public reads load only the selected page. Configure proxy rate, connection, and request-timeout limits, including public reads. Allow up to 1 MiB + 16 KiB for multipart uploads and 6 MiB + 16 KiB for MCP JSON envelopes. SlopBox bounds each decoded page to 1 MiB and admits at most 16 parsing or database operations at once.
 
 ## Connect your agent
 

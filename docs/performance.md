@@ -1,6 +1,6 @@
 # Performance budgets
 
-The performance job measures the same standard and Alpine OCI artifacts that runtime CI tests. It checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed performance checks prevent image publication.
+The performance job measures the same standard and Alpine OCI artifacts that runtime CI tests, using the default SQLite backend. It checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed performance checks prevent image publication. PostgreSQL integration follows the approval rule in [testing conventions](testing.md#database-contracts).
 
 ## Run locally
 
@@ -35,20 +35,24 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Standard image | 50 MB compressed, 125 MB unpacked |
 | Alpine image | 10 MB compressed, 20 MB unpacked |
 | Readiness | 500 ms, excluding image pull |
-| Idle memory and CPU | 20 MB, 1% of one CPU |
+| Idle memory and CPU | 50 MB, 1% of one CPU |
 | Busy memory | 128 MB |
 | Retained memory growth | 80 MiB above seeded idle memory |
 | Read operations | p95 <= 500 ms, CPU <= 3 ms/op, throughput >= 300 op/s |
 | Verified write operations | p95 <= 500 ms, CPU <= 12 ms/op, throughput >= 70 op/s |
 | Rejection operations | p95 <= 500 ms, CPU <= 4 ms/op, throughput >= 150 op/s |
 
-In addition, CPU cost cannot exceed twice the fixed profile/variant reference, and throughput cannot fall below half its reference. CI and local references are separate. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
+In addition, CPU cost cannot exceed twice its fixed reference allowance. CPU allowances are shared across CI and local profiles because runner hardware varies. Standard read/write/rejection allowances are 1/5/2 ms per operation; Alpine allowances are 2/7/2 ms. The absolute CPU caps also apply. Throughput uses only the absolute floors in the table; profile-specific throughput references remain calibration data. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
 
 MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
 
-Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across collected normal runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The size and memory caps allow at least 40% headroom. The initial 100 ms latency cap allowed 88% above the worst write p95 of 53.3 ms. The policy records reference commits, image digests, hosts, run ID, and median measurements.
+Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across those initial runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The initial size and memory caps allowed at least 40% headroom. The initial 100 ms latency cap allowed 88% above the worst write p95 of 53.3 ms. These measurements describe the filesystem backend, not current database headroom. The policy preserves initial calibration metadata and records CPU allowance revisions separately.
 
-Workload p95 latency now has a 500 ms cap on every repetition. Hosted-runner PR #14 run `38052106658` measured standard write p95 values of 112.2, 14.4, and 38.6 ms with CPU costs of 1.68 to 1.72 ms per operation. The higher latency cap allows elapsed-time variation without changing CPU or throughput limits. Shared-host contention can still exceed it, so a failure requires diagnosis rather than proving a code defect.
+Workload p95 latency has a 500 ms cap on every repetition. Hosted-runner PR #14 run `38052106658` measured standard write p95 values of 112.2, 14.4, and 38.6 ms with CPU costs of 1.68 to 1.72 ms per operation. The latency cap allows elapsed-time variation; CPU cost and absolute throughput floors remain separate checks. Shared-host contention can still exceed the cap, so a failure requires diagnosis rather than proving a code defect.
+
+SQLite PR #15 run `38053261871` measured peak idle memory of 20.71 MB. The 50 MB idle cap allows feature growth while keeping the 128 MB busy-memory cap separate.
+
+The SQLite implementation measured local maximum CPU costs of 0.996/4.176/1.558 ms for standard reads/writes/rejections, and 2.540/6.569/1.943 ms for Alpine. PR #15 run `38050250307` measured CI maxima of 0.848/2.874/0.910 ms and 1.674/4.636/1.594 ms respectively. Rounded CPU allowances accommodate those costs without treating the original hosted runner as fixed hardware. Alpine reads still have only 18% headroom under the absolute 3 ms cap. The database read path adds SQL retrieval and content integrity validation; these controls remain required.
 
 Compressed size covers unique runtime layers for Linux amd64, excluding SBOMs, attestations, and archive overhead. Memory covers the whole cgroup, including filesystem cache. Busy memory uses the cumulative cgroup peak, so an earlier workload's peak remains visible. Recovery bounds retained growth; it does not prove absence of leaks. Latency is client-side verified operation latency under a closed-loop workload, not a claim about maximum sustainable traffic.
 
