@@ -24,3 +24,15 @@ cargo llvm-cov report --text --output-path test-output/coverage.txt
 ```
 
 Coverage requires the optional `cargo-llvm-cov` tool and Rust's LLVM tools component. Review missing regions as well as lines. Coverage is evidence of execution, not proof that assertions protect behavior. Record unreachable or environment-dependent gaps in the generated report rather than hiding them or encoding current percentages in conventions.
+
+## Database contracts
+
+`cargo test` runs the shared storage, authentication, HTTP and MCP contracts against real SQLite. PostgreSQL integration tests require explicit user approval before running. Do not start a PostgreSQL service or connect to one for tests without that opt-in. A configured connection URL alone is not approval. After approval, run the same contracts with a unique schema per fixture:
+
+```sh
+SLOPBOX_TEST_PROVIDER=postgres DATABASE_TEST_POSTGRES_URL=postgres://user:password@127.0.0.1:5432/test_database cargo test --locked
+```
+
+Use a disposable database with schema creation permission. Tests disable TLS for this local service. CLI key tests exercise PostgreSQL only when `SLOPBOX_TEST_PROVIDER=postgres` is explicitly set. Supply a disposable database externally. Ordinary local and CI tests do not start an external database service. Fixture schemas remain until the disposable database is removed.
+
+Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, migration compatibility and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.

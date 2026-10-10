@@ -1,6 +1,6 @@
 # Performance budgets
 
-The performance job measures the same standard and Alpine OCI artifacts that runtime CI tests. It checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed performance checks prevent image publication.
+The performance job measures the same standard and Alpine OCI artifacts that runtime CI tests, using the default SQLite backend. It checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed performance checks prevent image publication. PostgreSQL integration follows the approval rule in [testing conventions](testing.md#database-contracts).
 
 ## Run locally
 

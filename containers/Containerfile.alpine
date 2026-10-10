@@ -1,9 +1,11 @@
 FROM docker.io/library/rust:1.98-alpine3.23 AS build
 WORKDIR /src
-RUN apk add --no-cache musl-dev
+ARG CARGO_BUILD_JOBS=1
+RUN apk add --no-cache build-base
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
+COPY migrations ./migrations
 RUN cargo build --release --locked && strip /src/target/release/slopbox
 
 FROM docker.io/library/alpine:3.23

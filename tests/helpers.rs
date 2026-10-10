@@ -1,5 +1,76 @@
 use super::*;
 
+#[tokio::test]
+async fn database_lock_does_not_block_http_or_cancel_an_admitted_write() {
+    use crate::test_helpers::request;
+    let fixture = crate::test_helpers::TestApp::new().await;
+    let lock = fixture.db.lock_writes().await;
+    let state = fixture.state.clone();
+    let storage = state.storage.clone();
+    let (started, running) = tokio::sync::oneshot::channel();
+    let waiter = tokio::spawn(async move {
+        database_job(&state, async move {
+            started.send(()).unwrap();
+            Ok(storage.create(b"<p>database lock</p>").await?)
+        })
+        .await
+    });
+    running.await.unwrap();
+    assert!(!waiter.is_finished());
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        fixture.send(request(axum::http::Method::GET, "/", None, None, "")),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.0, axum::http::StatusCode::OK);
+    assert_eq!(fixture.db.upload_count().await, 0);
+    waiter.abort();
+    assert!(waiter.await.err().unwrap().is_cancelled());
+    assert_eq!(fixture.state.jobs.available_permits(), 15);
+    lock.release().await;
+    let drained = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        fixture.state.jobs.acquire_many(16),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(fixture.db.upload_count().await, 1);
+    drop(drained);
+}
+
+#[tokio::test]
+async fn cancelled_database_waiters_keep_their_job_admitted_until_completion() {
+    let fixture = crate::test_helpers::TestApp::new().await;
+    let state = fixture.state.clone();
+    let jobs = state.jobs.clone();
+    let (started, running) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel();
+    let storage = state.storage.clone();
+    let waiter = tokio::spawn(async move {
+        database_job(&state, async move {
+            started.send(()).unwrap();
+            released.await.unwrap();
+            storage.create(b"<p>detached write</p>").await?;
+            Ok(())
+        })
+        .await
+    });
+    running.await.unwrap();
+    assert_eq!(jobs.available_permits(), 15);
+    waiter.abort();
+    assert!(waiter.await.unwrap_err().is_cancelled());
+    assert_eq!(jobs.available_permits(), 15);
+    release.send(()).unwrap();
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(5), jobs.acquire_many(16))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fixture.db.upload_count().await, 1);
+    drop(drained);
+}
+
 #[test]
 fn identifiers_hashes_and_known_sha256_vector() {
     for id in [
@@ -32,70 +103,6 @@ fn identifiers_hashes_and_known_sha256_vector() {
         assert_eq!(value.len(), bytes * 2);
         assert!(value.bytes().all(|b| b.is_ascii_hexdigit()));
     }
-}
-
-#[test]
-fn atomic_write_replaces_content_and_preserves_destination_on_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("content");
-    atomic_write(&path, b"first").unwrap();
-    atomic_write(&path, b"second").unwrap();
-    assert_eq!(fs::read(&path).unwrap(), b"second");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
-    let destination = dir.path().join("directory");
-    fs::create_dir(&destination).unwrap();
-    fs::write(destination.join("existing"), b"keep").unwrap();
-    assert!(matches!(
-        atomic_write(&destination, b"replacement"),
-        Err(StoreError::Io(_))
-    ));
-    assert_eq!(fs::read(destination.join("existing")).unwrap(), b"keep");
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
-    assert!(matches!(
-        atomic_write(&dir.path().join("missing/content"), b"x"),
-        Err(StoreError::Io(_))
-    ));
-}
-
-#[test]
-fn shared_io_error_mapping_preserves_kind_and_message() {
-    use std::io::{Error, ErrorKind};
-    assert!(matches!(
-        not_found(Error::from(ErrorKind::NotFound)),
-        StoreError::NotFound
-    ));
-    for kind in [
-        ErrorKind::PermissionDenied,
-        ErrorKind::InvalidInput,
-        ErrorKind::Other,
-    ] {
-        let StoreError::Io(error) = not_found(Error::new(kind, "original detail")) else {
-            panic!("non-missing errors must retain their cause");
-        };
-        assert_eq!(error.kind(), kind);
-        assert_eq!(error.to_string(), "original detail");
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn atomic_write_checks_directory_access_before_replacing_content() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("content");
-    fs::write(&path, b"original").unwrap();
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o300)).unwrap();
-    let result = atomic_write(&path, b"replacement");
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(result.is_err());
-    assert_eq!(fs::read(path).unwrap(), b"original");
 }
 
 #[test]
@@ -135,7 +142,7 @@ fn tool_errors_return_client_messages_without_internal_details() {
 
 #[tokio::test]
 async fn cancelling_a_waiter_keeps_its_running_blocking_job_admitted() {
-    let fixture = crate::test_helpers::TestApp::new();
+    let fixture = crate::test_helpers::TestApp::new().await;
     let state = fixture.state;
     let (started, ready) = tokio::sync::oneshot::channel();
     let (release, finish) = std::sync::mpsc::channel();
@@ -173,20 +180,4 @@ fn element_detection_ignores_comments_and_accepts_later_elements() {
         assert!(validate_html(invalid).is_err(), "{invalid}");
     }
     assert!(validate_html("<!-- first --><p>element</p><!-- last -->").is_ok());
-}
-
-#[cfg(unix)]
-#[test]
-fn directory_initialization_rechecks_existing_parent_durability() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("nested").join("keys");
-    durable_directory(&path).unwrap();
-    let parent = path.parent().unwrap();
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o300)).unwrap();
-    let result = durable_directory(&path);
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(result.is_err());
-    durable_directory(&path).unwrap();
-    assert!(path.is_dir());
 }

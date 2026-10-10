@@ -1,3 +1,4 @@
+mod database;
 mod helpers;
 mod keys;
 mod mcp;
@@ -12,8 +13,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::{Parser, Subcommand};
 use helpers::{
-    MAX_HTML_BYTES, authorize, blocking, multipart_html, page_url, upload_response, valid_hash,
-    valid_id, validate_html, version_response,
+    MAX_HTML_BYTES, authorize, blocking, database_job, multipart_html, page_url, upload_response,
+    valid_hash, valid_id, validate_html, version_response,
 };
 use keys::KeyStore;
 use serde::Serialize;
@@ -24,7 +25,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use storage::{FilesystemStorage, StoreError};
+use storage::{Storage, StoreError};
 use url::Url;
 
 #[derive(Parser)]
@@ -32,6 +33,8 @@ use url::Url;
 struct Cli {
     #[arg(long, env = "STORAGE_PATH", default_value = "/data")]
     storage_path: PathBuf,
+    #[command(flatten)]
+    database: database::DatabaseConfig,
     #[command(subcommand)]
     command: Command,
 }
@@ -59,7 +62,7 @@ enum KeyCommand {
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub storage: Arc<FilesystemStorage>,
+    pub storage: Arc<dyn Storage>,
     pub keys: Arc<KeyStore>,
     pub base_url: Url,
     pub jobs: Arc<tokio::sync::Semaphore>,
@@ -159,18 +162,18 @@ async fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Keys { command } => {
-            let keys = KeyStore::new(cli.storage_path)?;
+            let keys = KeyStore::new(cli.database.open(&cli.storage_path).await?);
             match command {
                 KeyCommand::Create => {
-                    let (id, key) = keys.create()?;
+                    let (id, key) = keys.create().await?;
                     println!("{id} {key}");
                 }
                 KeyCommand::List => {
-                    for id in keys.list()? {
+                    for id in keys.list().await? {
                         println!("{id}");
                     }
                 }
-                KeyCommand::Revoke { id } => keys.revoke(&id)?,
+                KeyCommand::Revoke { id } => keys.revoke(&id).await?,
             }
         }
         Command::Serve {
@@ -194,9 +197,10 @@ async fn run() -> Result<()> {
                         .unwrap_or_else(|_| "info".into()),
                 )
                 .init();
+            let database = cli.database.open(&cli.storage_path).await?;
             let state = AppState {
-                storage: Arc::new(FilesystemStorage::new(cli.storage_path.clone())?),
-                keys: Arc::new(KeyStore::new(cli.storage_path)?),
+                storage: database.clone(),
+                keys: Arc::new(KeyStore::new(database.clone())),
                 base_url,
                 jobs: Arc::new(tokio::sync::Semaphore::new(16)),
             };
@@ -226,7 +230,7 @@ async fn run() -> Result<()> {
                     None => server.await,
                 }
                 .context("server failed")?;
-                tracing::info!("draining blocking jobs");
+                tracing::info!("draining admitted jobs");
                 let _drained = jobs
                     .acquire_many_owned(16)
                     .await
@@ -235,6 +239,7 @@ async fn run() -> Result<()> {
             })
             .await
             .context("shutdown drain timed out")??;
+            database.close().await;
         }
     }
     Ok(())
@@ -305,12 +310,13 @@ pub(crate) async fn upload(
     let owned = state.clone();
     let id = id.map(str::to_owned);
     let content = content.to_owned();
-    blocking(state, move || {
-        validate_html(&content)?;
+    let checked = content.clone();
+    blocking(state, move || validate_html(&checked)).await?;
+    database_job(state, async move {
         let saved = if let Some(id) = id {
-            owned.storage.update(&id, content.as_bytes())?
+            owned.storage.update(&id, content.as_bytes()).await?
         } else {
-            owned.storage.create(content.as_bytes())?
+            owned.storage.create(content.as_bytes()).await?
         };
         Ok(upload_response(&owned, saved))
     })
@@ -320,8 +326,8 @@ pub(crate) async fn upload(
 pub(crate) async fn versions(state: &AppState, id: &str) -> Result<VersionListResponse, AppError> {
     let owned = state.clone();
     let id = id.to_owned();
-    blocking(state, move || {
-        let versions = owned.storage.versions(&id)?;
+    database_job(state, async move {
+        let versions = owned.storage.versions(&id).await?;
         Ok(VersionListResponse {
             upload_id: id.clone(),
             versions: versions
@@ -341,8 +347,8 @@ pub(crate) async fn get_page_url(
     let owned = state.clone();
     let id = id.to_owned();
     let hash = hash.map(str::to_owned);
-    blocking(state, move || {
-        owned.storage.check_content(&id, hash.as_deref())?;
+    database_job(state, async move {
+        owned.storage.check_content(&id, hash.as_deref()).await?;
         Ok(page_url(&owned, &id, hash.as_deref()))
     })
     .await
@@ -388,7 +394,10 @@ async fn get_html(
     }
     let storage = state.storage.clone();
     let selected = hash.map(str::to_owned);
-    let content = blocking(&state, move || Ok(storage.get(&id, selected.as_deref())?)).await?;
+    let content = database_job(&state, async move {
+        Ok(storage.get(&id, selected.as_deref()).await?)
+    })
+    .await?;
     let mut response = content.into_response();
     let headers = response.headers_mut();
     headers.insert(
