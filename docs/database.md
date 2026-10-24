@@ -1,6 +1,6 @@
 # Database configuration
 
-SQLite is the default. One database stores page bytes, version history, latest selections and API key hashes. HTTP, MCP and CLI commands use the same backend and settings. Both providers implement the same contract. Existing filesystem installations are not imported; rebuild alpha installations from scratch.
+SQLite is the default. One database stores version history, latest selections and API key hashes. HTML bytes also live there unless [S3 content storage](content-storage.md) is selected. HTTP, MCP and CLI commands use the same backend and settings. Both providers implement the same contract. Existing filesystem installations are not imported; rebuild alpha installations from scratch.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |

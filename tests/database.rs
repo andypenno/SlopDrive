@@ -6,6 +6,7 @@ async fn populated_initial_schema_upgrades_without_losing_history_or_keys() {
     use crate::helpers::{hash, random_hex};
     let fixture = crate::test_helpers::TestApp::new().await;
     let mut config = fixture.config.clone();
+    config.content = Default::default();
     let dir = tempfile::tempdir().unwrap();
     let id = "a".repeat(32);
     let digest = hash(b"<p>legacy</p>");

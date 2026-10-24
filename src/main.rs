@@ -1,3 +1,4 @@
+mod content;
 mod database;
 mod helpers;
 mod keys;
@@ -432,6 +433,10 @@ async fn get_html(
 #[cfg(test)]
 #[path = "../tests/support/helpers.rs"]
 mod test_helpers;
+
+#[cfg(test)]
+#[path = "../tests/support/s3.rs"]
+mod test_s3;
 
 #[cfg(test)]
 #[path = "../tests/http.rs"]

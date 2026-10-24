@@ -61,8 +61,14 @@ fn commit_error(_: sqlx::Error) -> StoreError {
     ))
 }
 
-pub(super) struct SqliteBackend(pub(super) SqlitePool);
-pub(super) struct PgBackend(pub(super) PgPool);
+pub(super) struct SqliteBackend(
+    pub(super) SqlitePool,
+    pub(super) Option<crate::content::S3Content>,
+);
+pub(super) struct PgBackend(
+    pub(super) PgPool,
+    pub(super) Option<crate::content::S3Content>,
+);
 
 // Both drivers execute the same operations; only locking and schema syntax differ.
 macro_rules! backend {
@@ -77,6 +83,10 @@ macro_rules! backend {
                 let version = version_for(html);
                 loop {
                     let id = random_hex(16)?;
+                    let key = self.1.as_ref().map(|store| store.key(&id, &version.content_hash));
+                    if let (Some(store), Some(key)) = (&self.1, &key) {
+                        store.put(key, html).await?;
+                    }
                     let mut tx = self.0.begin_with($begin).await?;
                     let inserted = sqlx::query::<$db>(
                         "INSERT INTO uploads (id, latest_hash) VALUES ($1, $2)",
@@ -93,7 +103,7 @@ macro_rules! backend {
                         continue;
                     }
                     inserted?;
-                    sqlx::query::<$db>("INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content) VALUES ($1, $2, $3, $4, 1, $5)").bind(&id).bind(&version.content_hash).bind(version.created_at.timestamp_micros()).bind(html.len() as i64).bind(html).execute(&mut *tx).await?;
+                    sqlx::query::<$db>("INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content, object_key) VALUES ($1, $2, $3, $4, 1, $5, $6)").bind(&id).bind(&version.content_hash).bind(version.created_at.timestamp_micros()).bind(html.len() as i64).bind(if key.is_none() { Some(html) } else { None }).bind(&key).execute(&mut *tx).await?;
                     tx.commit().await.map_err(commit_error)?;
                     return Ok(Saved {
                         upload_id: id,
@@ -107,6 +117,26 @@ macro_rules! backend {
                 }
                 check_input(html)?;
                 let candidate = version_for(html);
+                let key = if let Some(store) = &self.1 {
+                    let found = sqlx::query_scalar::<$db, String>("SELECT id FROM uploads WHERE id = $1")
+                        .bind(id).fetch_optional(&self.0).await?;
+                    if found.is_none() { return Err(StoreError::NotFound); }
+                    let prior = sqlx::query_as::<$db, (String, i64, i64, Option<String>)>("SELECT content_hash, created_at, size_bytes, object_key FROM versions WHERE upload_id = $1 AND content_hash = $2")
+                        .bind(id).bind(&candidate.content_hash).fetch_optional(&self.0).await?;
+                    match prior {
+                        Some((digest, timestamp, size, key)) => {
+                            let version = recorded_version(digest, timestamp, size)?;
+                            if version.size_bytes != html.len() { return Err(StoreError::InvalidMetadata); }
+                            key
+                        }
+                        None => Some(store.key(id, &candidate.content_hash)),
+                    }
+                } else { None };
+                if let Some(key) = &key {
+                    let store = self.1.as_ref().ok_or(StoreError::InvalidMetadata)?;
+                    if *key != store.key(id, &candidate.content_hash) { return Err(StoreError::InvalidMetadata); }
+                    store.put(key, html).await?;
+                }
                 let mut tx = self.0.begin_with($begin).await?;
                 if sqlx::query_scalar::<$db, String>($lock)
                     .bind(id)
@@ -116,20 +146,17 @@ macro_rules! backend {
                 {
                     return Err(StoreError::NotFound);
                 }
-                let existing = sqlx::query_as::<$db, (String, i64, i64)>("SELECT content_hash, created_at, size_bytes FROM versions WHERE upload_id = $1 AND content_hash = $2").bind(id).bind(&candidate.content_hash).fetch_optional(&mut *tx).await?;
-                let version = if let Some((digest, timestamp, size)) = existing {
+                let existing = sqlx::query_as::<$db, (String, i64, i64, Option<String>)>("SELECT content_hash, created_at, size_bytes, object_key FROM versions WHERE upload_id = $1 AND content_hash = $2").bind(id).bind(&candidate.content_hash).fetch_optional(&mut *tx).await?;
+                let version = if let Some((digest, timestamp, size, recorded_key)) = existing {
                     let version = recorded_version(digest, timestamp, size)?;
                     if version.size_bytes != html.len() {
                         return Err(StoreError::InvalidMetadata);
                     }
-                    sqlx::query::<$db>(
-                        "UPDATE versions SET content = $1 WHERE upload_id = $2 AND content_hash = $3",
-                    )
-                    .bind(html)
-                    .bind(id)
-                    .bind(&version.content_hash)
-                    .execute(&mut *tx)
-                    .await?;
+                    if recorded_key != key { return Err(StoreError::InvalidMetadata); }
+                    if recorded_key.is_none() {
+                        sqlx::query::<$db>("UPDATE versions SET content = $1 WHERE upload_id = $2 AND content_hash = $3")
+                            .bind(html).bind(id).bind(&version.content_hash).execute(&mut *tx).await?;
+                    }
                     version
                 } else {
                     let number = sqlx::query_scalar::<$db, i64>(
@@ -138,7 +165,7 @@ macro_rules! backend {
                     .bind(id)
                     .fetch_one(&mut *tx)
                     .await?;
-                    sqlx::query::<$db>("INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content) VALUES ($1, $2, $3, $4, $5, $6)").bind(id).bind(&candidate.content_hash).bind(candidate.created_at.timestamp_micros()).bind(html.len() as i64).bind(number).bind(html).execute(&mut *tx).await?;
+                    sqlx::query::<$db>("INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content, object_key) VALUES ($1, $2, $3, $4, $5, $6, $7)").bind(id).bind(&candidate.content_hash).bind(candidate.created_at.timestamp_micros()).bind(html.len() as i64).bind(number).bind(if key.is_none() { Some(html) } else { None }).bind(&key).execute(&mut *tx).await?;
                     candidate
                 };
                 sqlx::query::<$db>("UPDATE uploads SET latest_hash = $1 WHERE id = $2")
@@ -159,7 +186,16 @@ macro_rules! backend {
                 if selected.is_some_and(|s| !valid_hash(s)) {
                     return Err(StoreError::NotFound);
                 }
-                let (bytes, digest, size) = sqlx::query_as::<$db, (Vec<u8>, String, i64)>("SELECT v.content, v.content_hash, v.size_bytes FROM uploads u JOIN versions v ON v.upload_id = u.id AND v.content_hash = COALESCE($2, u.latest_hash) WHERE u.id = $1").bind(id).bind(selected).fetch_optional(&self.0).await?.ok_or(StoreError::NotFound)?;
+                let (inline, key, digest, size) = sqlx::query_as::<$db, (Option<Vec<u8>>, Option<String>, String, i64)>("SELECT v.content, v.object_key, v.content_hash, v.size_bytes FROM uploads u JOIN versions v ON v.upload_id = u.id AND v.content_hash = COALESCE($2, u.latest_hash) WHERE u.id = $1").bind(id).bind(selected).fetch_optional(&self.0).await?.ok_or(StoreError::NotFound)?;
+                let bytes = match (inline, key) {
+                    (Some(bytes), None) => bytes,
+                    (None, Some(key)) => {
+                        let store = self.1.as_ref().ok_or(StoreError::InvalidMetadata)?;
+                        if key != store.key(id, &digest) { return Err(StoreError::InvalidMetadata); }
+                        store.get(&key).await?
+                    }
+                    _ => return Err(StoreError::InvalidMetadata),
+                };
                 if bytes.len() as i64 != size || hash(&bytes) != digest || check_input(&bytes).is_err() {
                     return Err(StoreError::InvalidMetadata);
                 }
@@ -260,8 +296,43 @@ macro_rules! migration {
     }};
 }
 
+macro_rules! bind_content {
+    ($backend:ident, $tx:ident, $db:ty) => {{
+        let binding = sqlx::query_as::<$db, (String, String)>(
+            "SELECT identity, namespace FROM content_store WHERE id = 1",
+        )
+        .fetch_optional(&mut *$tx)
+        .await?;
+        match (binding, &mut $backend.1) {
+            (Some((identity, namespace)), Some(store))
+                if identity == store.identity
+                    && valid_id(&namespace)
+                    && !namespace.bytes().any(|b| b.is_ascii_uppercase()) =>
+            {
+                store.namespace = namespace;
+            }
+            (Some(_), _) => {
+                return Err(StoreError::Configuration(
+                    "content storage does not match the database binding",
+                ));
+            }
+            (None, Some(store)) => {
+                store.namespace = random_hex(16)?;
+                sqlx::query::<$db>(
+                    "INSERT INTO content_store (id, identity, namespace) VALUES (1, $1, $2)",
+                )
+                .bind(&store.identity)
+                .bind(&store.namespace)
+                .execute(&mut *$tx)
+                .await?;
+            }
+            (None, None) => {}
+        }
+    }};
+}
+
 impl SqliteBackend {
-    pub async fn initialize(&self) -> Result<(), StoreError> {
+    pub async fn initialize(&mut self) -> Result<(), StoreError> {
         let mut tx = self.0.begin_with("BEGIN IMMEDIATE").await?;
         let migrated = migration!(
             tx,
@@ -279,11 +350,12 @@ impl SqliteBackend {
         {
             return Err(StoreError::InvalidMetadata);
         }
+        bind_content!(self, tx, sqlx::Sqlite);
         tx.commit().await.map_err(commit_error)
     }
 }
 impl PgBackend {
-    pub async fn initialize(&self, schema: &str) -> Result<(), StoreError> {
+    pub async fn initialize(&mut self, schema: &str) -> Result<(), StoreError> {
         let mut tx = self.0.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
             .bind(schema)
@@ -302,6 +374,7 @@ impl PgBackend {
                 include_str!("../../migrations/postgres/002_content_storage.sql")
             ]
         );
+        bind_content!(self, tx, sqlx::Postgres);
         tx.commit().await.map_err(commit_error)
     }
 }

@@ -1,6 +1,6 @@
 # Deployment and storage contract
 
-This is the target contract for supported deployment modes. SQLite and PostgreSQL with HTML stored in the database are implemented. S3 content storage is planned; its settings and migration procedure are not implemented yet. [Database configuration](database.md) describes the available settings.
+This is the contract for supported deployment modes. SQLite and PostgreSQL support inline and S3 HTML storage. S3 requires a build containing that feature; it is not in release 0.2.0. [Database configuration](database.md) and [HTML content storage](content-storage.md) describe the settings and upgrade boundaries. Bulk migration between stores is not provided.
 
 ## Responsibilities
 
@@ -14,8 +14,8 @@ Content storage owns the HTML bytes. It is either the same database or an S3-com
 | --- | --- | --- | --- |
 | SQLite | Same SQLite database | Default. One host with persistent local storage. | Implemented |
 | PostgreSQL | Same PostgreSQL database | Multiple SlopBox replicas without a shared filesystem. | Implemented |
-| SQLite | S3-compatible endpoint | One SlopBox host with external HTML storage. SQLite remains local. | Planned |
-| PostgreSQL | S3-compatible endpoint | Multiple SlopBox replicas with external metadata and HTML storage. | Planned |
+| SQLite | S3-compatible endpoint | One SlopBox host with external HTML storage. SQLite remains local. | Source builds with S3 support |
+| PostgreSQL | S3-compatible endpoint | Multiple SlopBox replicas with external metadata and HTML storage. | Source builds with S3 support |
 
 SQLite must use a local filesystem, not a shared network mount. Multiple processes on that host can access the database, including CLI key management. External HTML storage does not make SQLite a distributed database.
 
