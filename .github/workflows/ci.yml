@@ -43,8 +43,8 @@ jobs:
         run: python3 tests/releases.py
       - name: Performance measurement checks
         run: |
-          python3 tests/performance.py
-          python3 tests/benchmark.py
+          python3 tests/performance/test_budgets.py
+          python3 tests/performance/test_benchmark.py
 
   containers:
     name: Container checks
@@ -92,4 +92,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
-          python3 containers/release.py publish --archives "$ARCHIVES" --branch "$BRANCH" --sha "$COMMIT"
+          python3 release/images.py publish --archives "$ARCHIVES" --branch "$BRANCH" --sha "$COMMIT"

@@ -26,7 +26,7 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Package version
         id: package
-        run: echo "version=$(python3 containers/release.py version)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(python3 release/images.py version)" >> "$GITHUB_OUTPUT"
       - name: Export image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -126,7 +126,7 @@ jobs:
           result=0
           for variant in standard alpine; do
             skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
-            if ! python3 containers/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy containers/performance-policy.json --output "test-output/performance-$variant.json"; then
+            if ! python3 tests/performance/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"; then
               result=1
             fi
           done

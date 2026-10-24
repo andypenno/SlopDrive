@@ -6,7 +6,7 @@ Run `node tests/homepage.cjs` for homepage clipboard behavior. This dependency-f
 
 Run `python3 tests/releases.py` for version validation, immutable image promotion, and channel ordering. Run `python3 tests/compose.py docker compose` for image selection and deployment settings. Container CI tests both exported image variants with Docker and Podman, including switching a populated data volume between variants.
 
-Run `python3 tests/performance.py` and `python3 tests/benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
+Run `python3 tests/performance/test_budgets.py` and `python3 tests/performance/test_benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
 
 Use real routers and temporary stores for transport tests. Test successful requests, malformed inputs, exact size boundaries, missing data, retries, historical versions, and failure redaction. Paired HTTP and MCP checks must exercise the same shared behavior. Inspect complete version sets and retrieve their bytes when testing concurrency.
 

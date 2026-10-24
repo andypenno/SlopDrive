@@ -38,4 +38,4 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
-          python3 containers/release.py promote --tag "$RELEASE_TAG"
+          python3 release/images.py promote --tag "$RELEASE_TAG"

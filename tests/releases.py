@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("release", ROOT / "containers/release.py")
+spec = importlib.util.spec_from_file_location("release", ROOT / "release/images.py")
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
