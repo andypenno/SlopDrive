@@ -78,7 +78,7 @@ impl TestDatabase {
         .is_err()
     }
     pub(crate) async fn set_schema_version(&self, version: i64) {
-        self.execute(&format!("UPDATE schema_migrations SET version = {version}"))
+        self.execute(&format!("UPDATE schema_migrations SET version = {version} WHERE version = (SELECT MAX(version) FROM schema_migrations)"))
             .await
             .unwrap();
     }

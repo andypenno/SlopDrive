@@ -243,24 +243,42 @@ backend!(
 );
 
 macro_rules! migration {
-    ($tx:ident, $db:ty, $sql:expr) => {{
+    ($tx:ident, $db:ty, $sqls:expr) => {{
         sqlx::query::<$db>("CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, checksum TEXT NOT NULL)").execute(&mut *$tx).await?;
         let rows = sqlx::query_as::<$db, (i64, String)>("SELECT version, checksum FROM schema_migrations ORDER BY version").fetch_all(&mut *$tx).await?;
-        let checksum = hash($sql.as_bytes());
-        if rows.is_empty() {
-            sqlx::raw_sql($sql).execute(&mut *$tx).await?;
-            sqlx::query::<$db>("INSERT INTO schema_migrations (version, checksum) VALUES (1, $1)").bind(&checksum).execute(&mut *$tx).await?;
-        } else if rows != [(1, checksum)] { return Err(StoreError::Configuration("unsupported or modified database schema")); }
+        let scripts = $sqls;
+        if rows.len() > scripts.len() || rows.iter().enumerate().any(|(i, (version, checksum))| *version != (i + 1) as i64 || *checksum != hash(scripts[i].as_bytes())) {
+            return Err(StoreError::Configuration("unsupported or modified database schema"));
+        }
+        let migrated = rows.len() < scripts.len();
+        for (index, sql) in scripts.iter().enumerate().skip(rows.len()) {
+            sqlx::raw_sql(sql).execute(&mut *$tx).await?;
+            sqlx::query::<$db>("INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)")
+                .bind((index + 1) as i64).bind(hash(sql.as_bytes())).execute(&mut *$tx).await?;
+        }
+        migrated
     }};
 }
+
 impl SqliteBackend {
     pub async fn initialize(&self) -> Result<(), StoreError> {
         let mut tx = self.0.begin_with("BEGIN IMMEDIATE").await?;
-        migration!(
+        let migrated = migration!(
             tx,
             sqlx::Sqlite,
-            include_str!("../../migrations/sqlite/001_initial.sql")
+            [
+                include_str!("../../migrations/sqlite/001_initial.sql"),
+                include_str!("../../migrations/sqlite/002_content_storage.sql")
+            ]
         );
+        if migrated
+            && !sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&mut *tx)
+                .await?
+                .is_empty()
+        {
+            return Err(StoreError::InvalidMetadata);
+        }
         tx.commit().await.map_err(commit_error)
     }
 }
@@ -279,7 +297,10 @@ impl PgBackend {
         migration!(
             tx,
             sqlx::Postgres,
-            include_str!("../../migrations/postgres/001_initial.sql")
+            [
+                include_str!("../../migrations/postgres/001_initial.sql"),
+                include_str!("../../migrations/postgres/002_content_storage.sql")
+            ]
         );
         tx.commit().await.map_err(commit_error)
     }

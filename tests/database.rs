@@ -2,6 +2,75 @@ use super::*;
 use clap::Parser;
 
 #[tokio::test]
+async fn populated_initial_schema_upgrades_without_losing_history_or_keys() {
+    use crate::helpers::{hash, random_hex};
+    let fixture = crate::test_helpers::TestApp::new().await;
+    let mut config = fixture.config.clone();
+    let dir = tempfile::tempdir().unwrap();
+    let id = "a".repeat(32);
+    let digest = hash(b"<p>legacy</p>");
+    let key_id = "b".repeat(16);
+    let key_hash = "c".repeat(64);
+    macro_rules! populate {
+        ($pool:expr, $db:ty, $sql:expr) => {{
+            let pool = $pool;
+            let initial = $sql;
+            let mut tx = pool.begin().await.unwrap();
+            sqlx::raw_sql(initial).execute(&mut *tx).await.unwrap();
+            sqlx::raw_sql("CREATE TABLE schema_migrations (version BIGINT PRIMARY KEY, checksum TEXT NOT NULL)")
+                .execute(&mut *tx).await.unwrap();
+            sqlx::query::<$db>("INSERT INTO schema_migrations VALUES (1, $1)").bind(hash(initial.as_bytes())).execute(&mut *tx).await.unwrap();
+            sqlx::query::<$db>("INSERT INTO uploads VALUES ($1, $2)").bind(&id).bind(&digest).execute(&mut *tx).await.unwrap();
+            sqlx::query::<$db>("INSERT INTO versions VALUES ($1, $2, 123456, 13, 1, $3)").bind(&id).bind(&digest).bind(b"<p>legacy</p>".as_slice()).execute(&mut *tx).await.unwrap();
+            sqlx::query::<$db>("INSERT INTO api_keys VALUES ($1, $2)").bind(&key_id).bind(&key_hash).execute(&mut *tx).await.unwrap();
+            tx.commit().await.unwrap();
+            pool.close().await;
+        }};
+    }
+    match config.provider {
+        Provider::Sqlite => {
+            config.url = None;
+            let options = SqliteConnectOptions::new()
+                .filename(dir.path().join("slopbox.sqlite"))
+                .create_if_missing(true)
+                .foreign_keys(true);
+            let pool = SqlitePoolOptions::new()
+                .connect_with(options)
+                .await
+                .unwrap();
+            populate!(
+                pool,
+                sqlx::Sqlite,
+                include_str!("../migrations/sqlite/001_initial.sql")
+            );
+        }
+        Provider::Postgres => {
+            config.schema = Some(format!("upgrade_{}", random_hex(8).unwrap()));
+            let (options, schema) = config.postgres_options().unwrap();
+            let pool = PgPoolOptions::new().connect_with(options).await.unwrap();
+            sqlx::raw_sql(&format!("CREATE SCHEMA \"{schema}\""))
+                .execute(&pool)
+                .await
+                .unwrap();
+            populate!(
+                pool,
+                sqlx::Postgres,
+                include_str!("../migrations/postgres/001_initial.sql")
+            );
+        }
+    }
+    let store = config.open(dir.path()).await.unwrap();
+    assert_eq!(store.get(&id, None).await.unwrap(), b"<p>legacy</p>");
+    assert_eq!(store.key_hash(&key_id).await.unwrap(), Some(key_hash));
+    let versions = store.versions(&id).await.unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].created_at.timestamp_micros(), 123456);
+    assert_eq!(versions[0].content_hash, digest);
+    store.update(&id, b"<p>new</p>").await.unwrap();
+    assert_eq!(store.versions(&id).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn sqlite_startup_waits_for_a_lock_during_wal_setup() {
     let dir = tempfile::tempdir().unwrap();
     let lock = crate::test_helpers::sqlite_startup_lock(dir.path()).await;
