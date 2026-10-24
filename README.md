@@ -37,6 +37,8 @@ docker compose -f containers/compose.yaml run --rm --no-deps slopbox keys revoke
 
 Revoking a key takes effect without a restart. SQLite stores pages, history and key hashes in `/data/slopbox.sqlite` by default. PostgreSQL is also supported through environment settings and an [example Compose file](containers/compose.postgres.yaml). See [database configuration and backups](docs/database.md).
 
+Builds with S3 support can store HTML through a configurable S3-compatible endpoint while SQLite or PostgreSQL retains metadata and keys. See [HTML content storage](docs/content-storage.md) for Garage configuration, the PostgreSQL/S3 Compose example and upgrade requirements. This option is not available in the 0.2.0 image.
+
 To update, change `SLOPBOX_VERSION`, then repeat `pull` and `up -d`. Keep the data volume; `down --volumes` deletes it. Check release notes for storage compatibility before rolling back.
 
 ### Build locally

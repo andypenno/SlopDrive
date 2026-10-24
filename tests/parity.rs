@@ -103,7 +103,7 @@ async fn corrupt_content_fails_closed_and_a_retry_repairs_bytes_without_new_meta
         let (_, saved) = fixture.post_html("/upload", b"<p>good</p>").await;
         let id = saved["upload_id"].as_str().unwrap();
         let timestamp = fixture.state.storage.versions(id).await.unwrap()[0].created_at;
-        fixture.db.corrupt_content(id, b"<p>evil</p>").await;
+        fixture.corrupt_content(id, b"<p>evil</p>").await;
         let (status, error) = fixture
             .json(request(
                 Method::GET,

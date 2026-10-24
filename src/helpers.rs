@@ -10,6 +10,15 @@ use sha2::{Digest, Sha256};
 
 pub(crate) const MAX_HTML_BYTES: usize = 1024 * 1024;
 
+pub(crate) fn object_key(prefix: &str, namespace: &str, id: &str, hash: &str) -> String {
+    let key = format!("{namespace}/{id}/{hash}.html");
+    if prefix.is_empty() {
+        key
+    } else {
+        format!("{prefix}/{key}")
+    }
+}
+
 pub(crate) fn valid_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }

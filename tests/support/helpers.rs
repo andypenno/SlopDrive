@@ -67,7 +67,7 @@ impl TestDatabase {
         .is_err()
     }
     pub(crate) async fn rejects_duplicate_version(&self, id: &str) -> bool {
-        self.execute(&format!("BEGIN; INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content) SELECT upload_id, content_hash, created_at, size_bytes, version_number + 1, content FROM versions WHERE upload_id = '{id}'; COMMIT;")).await.is_err()
+        self.execute(&format!("BEGIN; INSERT INTO versions (upload_id, content_hash, created_at, size_bytes, version_number, content, object_key) SELECT upload_id, content_hash, created_at, size_bytes, version_number + 1, content, object_key FROM versions WHERE upload_id = '{id}'; COMMIT;")).await.is_err()
     }
     pub(crate) async fn rejects_missing_latest(&self, id: &str) -> bool {
         self.execute(&format!(
@@ -78,7 +78,7 @@ impl TestDatabase {
         .is_err()
     }
     pub(crate) async fn set_schema_version(&self, version: i64) {
-        self.execute(&format!("UPDATE schema_migrations SET version = {version}"))
+        self.execute(&format!("UPDATE schema_migrations SET version = {version} WHERE version = (SELECT MAX(version) FROM schema_migrations)"))
             .await
             .unwrap();
     }
@@ -159,12 +159,41 @@ pub(crate) struct TestApp {
     pub(crate) dir: TempDir,
     pub(crate) config: database::DatabaseConfig,
     pub(crate) db: TestDatabase,
+    s3_fixture: Option<crate::test_s3::TestS3>,
 }
 
 impl TestApp {
     pub(crate) async fn new() -> Self {
+        let s3 = if std::env::var("SLOPBOX_TEST_CONTENT").as_deref() == Ok("s3") {
+            Some(crate::test_s3::TestS3::new().await)
+        } else {
+            None
+        };
+        let content = match &s3 {
+            Some(server) => {
+                let mut config = server.config.clone();
+                if let Ok(endpoint) = std::env::var("S3_TEST_ENDPOINT") {
+                    config.s3_endpoint = Some(endpoint);
+                    config.s3_bucket = Some(std::env::var("S3_TEST_BUCKET").unwrap());
+                    config.s3_access_key_id = Some(std::env::var("S3_TEST_ACCESS_KEY_ID").unwrap());
+                    config.s3_secret_access_key =
+                        Some(std::env::var("S3_TEST_SECRET_ACCESS_KEY").unwrap());
+                    config.s3_region =
+                        Some(std::env::var("S3_TEST_REGION").unwrap_or_else(|_| "garage".into()));
+                }
+                config
+            }
+            None => Default::default(),
+        };
+        let mut fixture = Self::with_content(content).await;
+        fixture.s3_fixture = s3;
+        fixture
+    }
+
+    pub(crate) async fn with_content(content: crate::content::ContentConfig) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut config = database::DatabaseConfig {
+            content,
             provider: database::Provider::Sqlite,
             url: None,
             host: None,
@@ -235,6 +264,38 @@ impl TestApp {
             dir,
             config,
             db,
+            s3_fixture: None,
+        }
+    }
+
+    pub(crate) async fn corrupt_content(&self, id: &str, bytes: &[u8]) {
+        let key: Option<String> = match &self.db {
+            TestDatabase::Sqlite(pool) => {
+                sqlx::query_scalar("SELECT object_key FROM versions WHERE upload_id = $1 LIMIT 1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap()
+            }
+            TestDatabase::Postgres(pool) => {
+                sqlx::query_scalar("SELECT object_key FROM versions WHERE upload_id = $1 LIMIT 1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap()
+            }
+        };
+        if let Some(key) = key {
+            self.config
+                .content
+                .open()
+                .unwrap()
+                .unwrap()
+                .put(&key, bytes)
+                .await
+                .unwrap();
+        } else {
+            self.db.corrupt_content(id, bytes).await;
         }
     }
 

@@ -1,5 +1,29 @@
 use std::process::Command;
 
+#[test]
+fn s3_configuration_errors_do_not_disclose_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = process::output(
+        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            .env("DATABASE_PROVIDER", "sqlite")
+            .env("CONTENT_STORAGE", "s3")
+            .env("S3_ENDPOINT", "https://user:private-password@example.com")
+            .env("S3_BUCKET", "test-bucket")
+            .env("S3_REGION", "garage")
+            .env("S3_ACCESS_KEY_ID", "private-access")
+            .env("S3_SECRET_ACCESS_KEY", "private-secret")
+            .arg("--storage-path")
+            .arg(dir.path())
+            .args(["keys", "create"]),
+    );
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let error = String::from_utf8(output.stderr).unwrap();
+    for private in ["private-password", "private-access", "private-secret"] {
+        assert!(!error.contains(private));
+    }
+}
+
 #[path = "support/process.rs"]
 mod process;
 

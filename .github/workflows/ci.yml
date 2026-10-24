@@ -30,6 +30,13 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: S3 storage contracts
+        run: SLOPBOX_TEST_CONTENT=s3 cargo test --locked --bin slopbox
+      - name: Running service storage checks
+        run: |
+          cargo build --locked
+          python3 tests/replicas.py --binary target/debug/slopbox
+          python3 tests/content_tls.py --binary target/debug/slopbox
       - name: Homepage clipboard checks
         run: node tests/homepage.cjs
       - name: Release policy checks

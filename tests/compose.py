@@ -48,4 +48,22 @@ for missing in ["SLOPBOX_VERSION", "BASE_URL", "DATABASE_PASSWORD"]:
     incomplete.pop(missing)
     result = subprocess.run(command, env=incomplete, capture_output=True, text=True, timeout=30)
     assert result.returncode != 0 and missing in result.stderr
-print("SQLite and PostgreSQL Compose configuration checks passed")
+command = [*sys.argv[1:], "-f", str(ROOT / "containers/compose.s3.yaml"), "config", "--format", "json"]
+settings.update(S3_ENDPOINT="https://objects.example.com/", S3_BUCKET="pages",
+                S3_REGION="garage", S3_ACCESS_KEY_ID="compose-test-access",
+                S3_SECRET_ACCESS_KEY="compose-test-secret")
+config = json.loads(subprocess.check_output(command, env=settings, text=True, timeout=30))
+service = config["services"]["slopbox"]
+assert service["environment"]["DATABASE_PROVIDER"] == "postgres"
+assert service["environment"]["CONTENT_STORAGE"] == "s3"
+assert service["environment"]["S3_ENDPOINT"] == settings["S3_ENDPOINT"]
+assert service["environment"]["S3_PATH_STYLE"] == "true"
+assert service["environment"]["S3_ALLOW_HTTP"] == "false"
+assert not service.get("volumes")
+assert not config["services"]["postgres"].get("ports")
+for missing in ["S3_ENDPOINT", "S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]:
+    incomplete = settings.copy()
+    incomplete.pop(missing)
+    result = subprocess.run(command, env=incomplete, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0 and missing in result.stderr
+print("SQLite, PostgreSQL and S3 Compose configuration checks passed")
