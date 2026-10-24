@@ -36,3 +36,13 @@ SLOPBOX_TEST_PROVIDER=postgres DATABASE_TEST_POSTGRES_URL=postgres://user:passwo
 Use a disposable database with schema creation permission. Tests disable TLS for this local service. CLI key tests exercise PostgreSQL only when `SLOPBOX_TEST_PROVIDER=postgres` is explicitly set. Supply a disposable database externally. Ordinary local and CI tests do not start an external database service. Fixture schemas remain until the disposable database is removed.
 
 Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, migration compatibility and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.
+
+## S3 contracts and independent processes
+
+`SLOPBOX_TEST_CONTENT=s3 cargo test --locked` runs the shared contracts against a local S3 protocol fixture owned by each test. It also runs bounded fault cases for missing or corrupt objects, failed publication, deadlines, location binding and mixed inline/S3 history. This fixture checks signed request shape but does not establish server compatibility.
+
+After building the binary, `python3 tests/content_tls.py --binary target/debug/slopbox` checks unknown-CA rejection and a custom-CA signed round trip against a local TLS fixture. It uses Python's standard library and the `openssl` executable to generate temporary test certificates. CI runs this check and the self-contained replica check.
+
+For real Garage coverage, provision a disposable private bucket and set `S3_TEST_ENDPOINT`, `S3_TEST_BUCKET`, `S3_TEST_ACCESS_KEY_ID`, `S3_TEST_SECRET_ACCESS_KEY` and `S3_TEST_REGION`. With `SLOPBOX_TEST_CONTENT=s3`, these settings select the external endpoint for shared contracts. Combine that selection with the explicit PostgreSQL opt-in above to run the fourth combination. Keep test prefixes isolated and remove the disposable bucket after the run; SlopBox does not delete objects.
+
+`python3 tests/replicas.py --binary target/debug/slopbox` exercises two running processes with SQLite. After explicit approval for disposable external fixtures, add `--s3` for the Garage combinations and `--postgres` for PostgreSQL. The PostgreSQL fixture uses `DATABASE_TEST_POSTGRES_URL`. The S3 fixture uses the `S3_TEST_*` settings above and requires `S3_TEST_ALLOW_HTTP=true` for plaintext local endpoints. The script verifies HTTP/MCP concurrent publication, complete pinned content, cross-process key revocation and restart persistence. Logs and results go under `test-output/`; every child process and temporary directory is owned by the run.
