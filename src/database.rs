@@ -1,3 +1,4 @@
+mod migrations;
 mod sql;
 
 use self::sql::{PgBackend, SqliteBackend};

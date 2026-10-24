@@ -35,7 +35,9 @@ SLOPBOX_TEST_PROVIDER=postgres DATABASE_TEST_POSTGRES_URL=postgres://user:passwo
 
 Use a disposable database with schema creation permission. Tests disable TLS for this local service. CLI key tests exercise PostgreSQL only when `SLOPBOX_TEST_PROVIDER=postgres` is explicitly set. Supply a disposable database externally. Ordinary local and CI tests do not start an external database service. Fixture schemas remain until the disposable database is removed.
 
-Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, migration compatibility and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.
+Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, fresh baseline creation, pending migration rollback, ledger validation and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.
+
+Migration tests use the same typed definitions on both providers. A test-only second migration proves pending history application without preserving obsolete SQL snapshots. Constraint checks cover canonical identifiers, byte locations, bounds and relationships. Existing pre-1.x databases are deliberately rejected, not upgraded.
 
 ## S3 contracts and independent processes
 

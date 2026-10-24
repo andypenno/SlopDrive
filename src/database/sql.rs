@@ -278,24 +278,6 @@ backend!(
     "SELECT id FROM uploads WHERE id = $1 FOR UPDATE"
 );
 
-macro_rules! migration {
-    ($tx:ident, $db:ty, $sqls:expr) => {{
-        sqlx::query::<$db>("CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, checksum TEXT NOT NULL)").execute(&mut *$tx).await?;
-        let rows = sqlx::query_as::<$db, (i64, String)>("SELECT version, checksum FROM schema_migrations ORDER BY version").fetch_all(&mut *$tx).await?;
-        let scripts = $sqls;
-        if rows.len() > scripts.len() || rows.iter().enumerate().any(|(i, (version, checksum))| *version != (i + 1) as i64 || *checksum != hash(scripts[i].as_bytes())) {
-            return Err(StoreError::Configuration("unsupported or modified database schema"));
-        }
-        let migrated = rows.len() < scripts.len();
-        for (index, sql) in scripts.iter().enumerate().skip(rows.len()) {
-            sqlx::raw_sql(sql).execute(&mut *$tx).await?;
-            sqlx::query::<$db>("INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)")
-                .bind((index + 1) as i64).bind(hash(sql.as_bytes())).execute(&mut *$tx).await?;
-        }
-        migrated
-    }};
-}
-
 macro_rules! bind_content {
     ($backend:ident, $tx:ident, $db:ty) => {{
         let binding = sqlx::query_as::<$db, (String, String)>(
@@ -334,14 +316,7 @@ macro_rules! bind_content {
 impl SqliteBackend {
     pub async fn initialize(&mut self) -> Result<(), StoreError> {
         let mut tx = self.0.begin_with("BEGIN IMMEDIATE").await?;
-        let migrated = migration!(
-            tx,
-            sqlx::Sqlite,
-            [
-                include_str!("../../migrations/sqlite/001_initial.sql"),
-                include_str!("../../migrations/sqlite/002_content_storage.sql")
-            ]
-        );
+        let migrated = super::migrations::sqlite(&mut tx).await?;
         if migrated
             && !sqlx::query("PRAGMA foreign_key_check")
                 .fetch_all(&mut *tx)
@@ -366,14 +341,7 @@ impl PgBackend {
         ))
         .execute(&mut *tx)
         .await?;
-        migration!(
-            tx,
-            sqlx::Postgres,
-            [
-                include_str!("../../migrations/postgres/001_initial.sql"),
-                include_str!("../../migrations/postgres/002_content_storage.sql")
-            ]
-        );
+        super::migrations::postgres(&mut tx).await?;
         bind_content!(self, tx, sqlx::Postgres);
         tx.commit().await.map_err(commit_error)
     }

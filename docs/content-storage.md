@@ -41,7 +41,7 @@ For multiple SlopBox replicas, use PostgreSQL with identical schema, content set
 
 ## Existing data and upgrades
 
-Back up the database before upgrading. Stop existing SlopBox processes and CLI writers before the schema upgrade or a change of content mode. Migration 002 preserves existing inline pages, IDs, history, timestamps and key hashes. Older binaries reject the new migration ledger, so upgrading from 0.2.0 is not a rolling upgrade. Roll back through a tested backup restore or a binary that supports the new schema and content locations.
+This pre-1.x build uses a fresh version-1 schema and rejects the earlier migration histories. Follow the [manual database recreation requirements](database.md#schema-and-backups) before starting it against an older development installation. Recreation loses metadata and S3 object references. It does not delete objects or import existing HTML. Stop SlopBox and CLI writers before recreation or a content-mode change.
 
 Enabling S3 explicitly changes where new distinct versions are written. Existing inline versions stay inline, and retries or historical restores repair their recorded location. No automatic export occurs. One upload can therefore have both inline and external versions, which SlopBox resolves from their metadata.
 

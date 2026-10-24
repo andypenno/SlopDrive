@@ -3,6 +3,7 @@
 - [Testing](testing.md) covers verification and test design.
 - [HTTP API](api.md) covers request handling and response policy.
 - [MCP](mcp.md) covers protocol and tool contracts.
+- [Migration conventions](migrations.md) covers shared schema definitions, provider rendering and ledger checksums.
 - [Database configuration](database.md) covers providers, deployment, migrations and backups.
 - [Deployment modes](deployment-modes.md) defines the supported database and content storage combinations, shared guarantees and S3 target contract.
 - [HTML content storage](content-storage.md) covers S3 configuration, Garage, existing data and backup requirements.
