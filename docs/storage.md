@@ -6,7 +6,7 @@ Create and update transactions publish version metadata and latest selection tog
 
 Distinct content adds one version. Same-content retries and historical restores retain the original timestamp and size. A retry repairs corrupted bytes without duplicating history. Public reads validate the selected bytes against their stored hash and size. Version lists validate metadata and latest membership.
 
-Print plaintext keys only from the creation command. Store their hashes and query the database on every authentication attempt so cross-process revocation takes effect immediately. Invalid records and database failures fail closed. Do not expose raw database errors or credentials in either transport.
+The creation command emits `sd_<id>_<secret>` keys. Print plaintext keys only from that command. Store their hashes and query the database on every authentication attempt so cross-process revocation takes effect immediately. Invalid records and database failures fail closed. Do not expose raw database errors or credentials in either transport.
 
 A lost commit acknowledgement is uncertain. HTTP returns 503 and MCP tells the caller that the write may have committed. Retry the same content. Verify durability by reopening the database, not only by inspecting the original connection.
 

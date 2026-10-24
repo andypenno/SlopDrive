@@ -33,10 +33,10 @@ jobs:
           context: .
           file: ${{ matrix.file }}
           platforms: linux/amd64
-          tags: slopbox:ci
+          tags: slopdrive:ci
           outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.variant }}.tar
           labels: |
-            org.opencontainers.image.source=https://github.com/andypenno/SlopBox
+            org.opencontainers.image.source=https://github.com/andypenno/SlopDrive
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.package.outputs.version }}
           provenance: mode=max
@@ -78,10 +78,10 @@ jobs:
         run: |
           for variant in standard alpine; do
             if [ "$ENGINE" = docker ]; then
-              skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
+              skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopdrive:$variant"
             else
               # Hosted Ubuntu restricts unprivileged user namespaces.
-              sudo skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "containers-storage:slopbox:$variant"
+              sudo skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "containers-storage:slopdrive:$variant"
             fi
           done
       - name: Service and persistence checks
@@ -89,11 +89,11 @@ jobs:
           ENGINE: ${{ matrix.engine }}
         run: |
           if [ "$ENGINE" = podman ]; then
-            sudo python3 tests/container_smoke.py --engine podman --image slopbox:standard --other-image slopbox:alpine
-            sudo python3 tests/container_smoke.py --engine podman --image slopbox:alpine
+            sudo python3 tests/container_smoke.py --engine podman --image slopdrive:standard --other-image slopdrive:alpine
+            sudo python3 tests/container_smoke.py --engine podman --image slopdrive:alpine
           else
-            python3 tests/container_smoke.py --engine docker --image slopbox:standard --other-image slopbox:alpine
-            python3 tests/container_smoke.py --engine docker --image slopbox:alpine
+            python3 tests/container_smoke.py --engine docker --image slopdrive:standard --other-image slopdrive:alpine
+            python3 tests/container_smoke.py --engine docker --image slopdrive:alpine
           fi
       - name: Compose configuration
         run: python3 tests/compose.py docker compose
@@ -125,8 +125,8 @@ jobs:
         run: |
           result=0
           for variant in standard alpine; do
-            skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopbox:$variant"
-            if ! python3 tests/performance/benchmark.py --engine docker --image "slopbox:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"; then
+            skopeo copy --override-os linux --override-arch amd64 "oci-archive:$ARCHIVES/$variant.tar" "docker-daemon:slopdrive:$variant"
+            if ! python3 tests/performance/benchmark.py --engine docker --image "slopdrive:$variant" --archive "$ARCHIVES/$variant.tar" --variant "$variant" --profile ci --revision "$REVISION" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"; then
               result=1
             fi
           done

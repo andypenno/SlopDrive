@@ -36,7 +36,7 @@ def check(binary, output):
             self.end_headers()
             self.wfile.write(value)
 
-    with tempfile.TemporaryDirectory(prefix="slopbox-tls-") as directory:
+    with tempfile.TemporaryDirectory(prefix="slopdrive-tls-") as directory:
         root = Path(directory)
 
         def openssl(*arguments):
@@ -44,7 +44,7 @@ def check(binary, output):
             assert result.returncode == 0, "test certificate generation failed"
 
         openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key",
-                "-out", "ca.pem", "-days", "1", "-subj", "/CN=SlopBox test CA",
+                "-out", "ca.pem", "-days", "1", "-subj", "/CN=SlopDrive test CA",
                 "-addext", "basicConstraints=critical,CA:TRUE")
         openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key",
                 "-out", "server.csr", "-subj", "/CN=127.0.0.1")

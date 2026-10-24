@@ -199,7 +199,7 @@ def check_network_constraints():
 
 
 def check_cleanup():
-    name = "slopbox-perf-cleanup-check"
+    name = "slopdrive-perf-cleanup-check"
     expected = [
         ["docker", "rm", "-f", name],
         ["docker", "volume", "rm", name + "-data"],

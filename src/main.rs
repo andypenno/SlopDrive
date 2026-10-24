@@ -30,7 +30,7 @@ use storage::{Storage, StoreError};
 use url::Url;
 
 #[derive(Parser)]
-#[command(name = "slopbox", about = "Single-file HTML host")]
+#[command(name = "slopdrive", about = "Single-file HTML host")]
 struct Cli {
     #[arg(long, env = "STORAGE_PATH", default_value = "/data")]
     storage_path: PathBuf,

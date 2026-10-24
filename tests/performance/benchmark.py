@@ -138,7 +138,7 @@ def ready(base, deadline):
     while time.monotonic() < deadline:
         try:
             status, _, content = request(base, "/")
-            if status == 200 and b"SlopBox" in content:
+            if status == 200 and b"SlopDrive" in content:
                 return
         except (OSError, urllib.error.URLError):
             pass
@@ -233,7 +233,7 @@ def container_endpoint(engine, name, network):
 
 
 def run_sample(engine, image, policy):
-    name = "slopbox-perf-" + uuid.uuid4().hex
+    name = "slopdrive-perf-" + uuid.uuid4().hex
     volume = name + "-data"
     network = name + "-network"
     resources = policy["resources"]

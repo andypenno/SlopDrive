@@ -11,7 +11,7 @@ async fn mcp_protocol_discovery_and_all_tools() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(initialized["result"]["protocolVersion"], "2025-03-26");
-    assert_eq!(initialized["result"]["serverInfo"]["name"], "slopbox");
+    assert_eq!(initialized["result"]["serverInfo"]["name"], "slopdrive");
     let (_, ping) = fixture
         .mcp(json!({"jsonrpc":"2.0","id":2,"method":"ping"}))
         .await;

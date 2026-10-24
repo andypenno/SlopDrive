@@ -1,6 +1,6 @@
 # Deployment and storage contract
 
-This is the contract for supported deployment modes. SQLite and PostgreSQL support inline and S3 HTML storage. S3 requires a build containing that feature; it is not in release 0.2.0. [Database configuration](database.md) and [HTML content storage](content-storage.md) describe the settings and upgrade boundaries. Bulk migration between stores is not provided.
+This is the contract for supported deployment modes. SQLite and PostgreSQL support inline and S3 HTML storage. [Database configuration](database.md) and [HTML content storage](content-storage.md) describe the settings and upgrade boundaries. Bulk migration between stores is not provided.
 
 ## Responsibilities
 
@@ -13,9 +13,9 @@ Content storage owns the HTML bytes. It is either the same database or an S3-com
 | Database | HTML storage | Deployment model | Availability |
 | --- | --- | --- | --- |
 | SQLite | Same SQLite database | Default. One host with persistent local storage. | Implemented |
-| PostgreSQL | Same PostgreSQL database | Multiple SlopBox replicas without a shared filesystem. | Implemented |
-| SQLite | S3-compatible endpoint | One SlopBox host with external HTML storage. SQLite remains local. | Source builds with S3 support |
-| PostgreSQL | S3-compatible endpoint | Multiple SlopBox replicas with external metadata and HTML storage. | Source builds with S3 support |
+| PostgreSQL | Same PostgreSQL database | Multiple SlopDrive replicas without a shared filesystem. | Implemented |
+| SQLite | S3-compatible endpoint | One SlopDrive host with external HTML storage. SQLite remains local. | Implemented |
+| PostgreSQL | S3-compatible endpoint | Multiple SlopDrive replicas with external metadata and HTML storage. | Implemented |
 
 SQLite must use a local filesystem, not a shared network mount. Multiple processes on that host can access the database, including CLI key management. External HTML storage does not make SQLite a distributed database.
 
@@ -39,7 +39,7 @@ Node-local HTML files are unsuitable for replicas on different hosts. A shared f
 | Concurrency | Independent writers retain every distinct committed version. The database serializes publication for an upload and selects latest in that order. Request arrival order does not determine latest. |
 | Integrity | Public reads validate bytes against the recorded hash and size. Retrying an update with the same content repairs missing or corrupted bytes without duplicating version metadata. |
 | Failure policy | Missing upload or version metadata returns not found. Missing or corrupt bytes for recorded content are an internal storage failure. Backend failures never silently select another backend or older version. |
-| URLs | Uploads and version lists return SlopBox base and versioned URLs. Base URLs follow latest. Versioned URLs retain their content. HTML delivery preserves SlopBox security headers and cache policy. |
+| URLs | Uploads and version lists return SlopDrive base and versioned URLs. Base URLs follow latest. Versioned URLs retain their content. HTML delivery preserves SlopDrive security headers and cache policy. |
 | Keys | Store only key hashes and query the database for authentication. Revocation takes effect across replicas. Fail closed on invalid records or database errors. |
 
 Version lists validate metadata and latest membership without fetching every historical HTML body. URL construction does not establish that content storage is healthy. Public reads perform byte validation.
@@ -52,7 +52,7 @@ Use a configurable endpoint, bucket, signing region and credentials, with config
 
 Garage is the primary self-hosted integration target. AWS S3 and MinIO are compatibility targets through the same protocol implementation, without provider-specific application branches. Compatibility claims require tests against the named implementation and version. The required runtime subset is whole-object PUT and GET; do not require bucket versioning, bucket creation, ACL management, AWS policy APIs, object listing or multipart uploads. The existing 1 MiB page limit remains.
 
-The endpoint must provide durable acknowledged writes and read-after-write consistency across the endpoints used by replicas. Garage deployments must use its consistent mode. Provision the bucket and permissions outside SlopBox. Keep objects private and deliver HTML through SlopBox so public URLs retain the service's browser isolation policy.
+The endpoint must provide durable acknowledged writes and read-after-write consistency across the endpoints used by replicas. Garage deployments must use its consistent mode. Provision the bucket and permissions outside SlopDrive. Keep objects private and deliver HTML through SlopDrive so public URLs retain the service's browser isolation policy.
 
 S3 and SQL do not share an atomic transaction. Store bytes before publishing their metadata. A failed or uncertain operation may leave an unreferenced private object, but must not publish metadata before its bytes are stored. Concurrent retries must not overwrite a version with different bytes. Automatic object deletion and orphan collection are outside the initial contract.
 
@@ -60,7 +60,7 @@ S3 and SQL do not share an atomic transaction. Store bytes before publishing the
 
 Changing configuration must not silently move, discard or reinterpret existing content. Record enough location information to resolve stored versions and reject incompatible configuration. Migration between databases or content stores requires an explicit procedure that preserves upload IDs, hashes, timestamps, ordering, latest selections and key hashes. Define and test that procedure before advertising a backend switch as supported.
 
-This pre-1.x baseline replaces earlier schema histories without an upgrade path. Older development databases must be [recreated manually](database.md#schema-and-backups). SlopBox never resets databases, exports HTML or deletes S3 objects automatically. A rollback requires a binary compatible with the schema and recorded content locations, or a tested backup restore.
+This pre-1.x baseline replaces earlier schema histories without an upgrade path. Older development databases must be [recreated manually](database.md#schema-and-backups). SlopDrive never resets databases, exports HTML or deletes S3 objects automatically. A rollback requires a binary compatible with the schema and recorded content locations, or a tested backup restore.
 
 Inline modes need a database backup. S3 modes need the database and every referenced object. A database backup alone cannot restore externally stored HTML. Coordinate backups to retain the objects referenced by the database snapshot, and test restoration before relying on them. Never apply expiration rules that can remove recorded versions.
 
@@ -68,6 +68,6 @@ Inline modes need a database backup. S3 modes need the database and every refere
 
 Run shared storage, authentication and paired HTTP/MCP contracts for each supported combination. S3 coverage must include missing and corrupt objects, retry repair, failed PUTs, failed metadata publication, uncertain acknowledgements and concurrent identical updates.
 
-Prove distributed behavior with independent SlopBox processes using PostgreSQL and the same content store. Publish through one replica and read through another, retain concurrent distinct versions, revoke keys across replicas and verify persistence after restarting replicas without local data. Exercise both PostgreSQL content modes. External integration runs follow the approval and fixture rules in [testing conventions](testing.md).
+Prove distributed behavior with independent SlopDrive processes using PostgreSQL and the same content store. Publish through one replica and read through another, retain concurrent distinct versions, revoke keys across replicas and verify persistence after restarting replicas without local data. Exercise both PostgreSQL content modes. External integration runs follow the approval and fixture rules in [testing conventions](testing.md).
 
 Garage's [S3 compatibility reference](https://github.com/deuxfleurs-org/garage/blob/main-v2/doc/book/reference-manual/s3-compatibility.md) and [consistency configuration](https://github.com/deuxfleurs-org/garage/blob/main-v2/doc/book/reference-manual/configuration.md) describe the protocol subset and deployment requirements. Pin a tested Garage version in integration fixtures rather than assuming every S3-compatible server has identical behavior.

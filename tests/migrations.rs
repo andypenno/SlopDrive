@@ -24,7 +24,7 @@ fn fingerprint_tracks_logical_schema_and_not_provider_sql() {
     );
     assert_eq!(
         checksum(&baseline),
-        "f0c1ca950134b6c5eba3d91e1ecfbf315115373bcb6d21764b336841ff600dd8"
+        "3ab494d41370b832ba4e27b50dddfbe6c56093b99d15fd13090754dec043c4bc"
     );
     assert_ne!(
         checksum(&baseline),

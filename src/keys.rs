@@ -13,7 +13,7 @@ impl KeyStore {
     pub async fn create(&self) -> Result<(String, String), StoreError> {
         loop {
             let id = random_hex(8)?;
-            let key = format!("sb_{id}_{}", random_hex(32)?);
+            let key = format!("sd_{id}_{}", random_hex(32)?);
             match self.backend.insert_key(&id, &hash(key.as_bytes())).await {
                 Ok(()) => return Ok((id, key)),
                 Err(StoreError::Conflict) => continue,
@@ -32,7 +32,7 @@ impl KeyStore {
     }
     pub async fn valid(&self, key: &str) -> Result<bool, StoreError> {
         let Some(id) = key
-            .strip_prefix("sb_")
+            .strip_prefix("sd_")
             .and_then(|rest| rest.split_once('_'))
             .map(|(id, _)| id)
         else {

@@ -5,16 +5,16 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
 RUN cargo build --release --locked
-RUN strip /src/target/release/slopbox
+RUN strip /src/target/release/slopdrive
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update && apt-get install --yes --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN groupadd --gid 10001 slopbox && useradd --uid 10001 --gid 10001 --no-create-home slopbox \
-    && mkdir /data && chown slopbox:slopbox /data
-COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox
+RUN groupadd --gid 10001 slopdrive && useradd --uid 10001 --gid 10001 --no-create-home slopdrive \
+    && mkdir /data && chown slopdrive:slopdrive /data
+COPY --from=build /src/target/release/slopdrive /usr/local/bin/slopdrive
 USER 10001:10001
 VOLUME /data
 EXPOSE 3000
 ENV STORAGE_PATH=/data BIND_ADDR=0.0.0.0:3000
-ENTRYPOINT ["/usr/local/bin/slopbox"]
+ENTRYPOINT ["/usr/local/bin/slopdrive"]
 CMD ["serve"]

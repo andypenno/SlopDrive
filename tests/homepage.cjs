@@ -6,7 +6,7 @@ const { runInNewContext } = require('node:vm');
 const html = readFileSync(resolve(__dirname, '../static/index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const json = html.match(/<code id="config-json">([\s\S]*?)<\/code>/)[1];
-assert.equal(JSON.parse(json).mcpServers.slopbox.headers.Authorization, 'Bearer YOUR_API_KEY');
+assert.equal(JSON.parse(json).mcpServers.slopdrive.headers.Authorization, 'Bearer YOUR_API_KEY');
 
 async function checkCopy(clipboard, succeeds) {
   let click;

@@ -1,5 +1,5 @@
 [package]
-name = "slopbox"
+name = "slopdrive"
 version = "0.2.0"
 edition = "2024"
 # Private unit modules are compiled by their owners, not as integration crates.
