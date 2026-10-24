@@ -72,7 +72,7 @@ impl ContentConfig {
     }
 
     fn prefix(&self) -> Result<&str, StoreError> {
-        let prefix = self.s3_prefix.as_deref().unwrap_or("slopbox");
+        let prefix = self.s3_prefix.as_deref().unwrap_or("slopdrive");
         if prefix.len() > 512
             || (!prefix.is_empty()
                 && prefix.split('/').any(|part| {

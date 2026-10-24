@@ -10,7 +10,7 @@ permissions:
 jobs:
   release:
     name: Promote tested main commit
-    if: github.repository == 'andypenno/SlopBox'
+    if: github.repository == 'andypenno/SlopDrive'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

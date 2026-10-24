@@ -111,7 +111,7 @@ async fn dispatch(state: &AppState, request: &Value) -> Value {
             Ok(json!({
             "protocolVersion": "2025-03-26",
             "capabilities": { "tools": { "listChanged": false } },
-            "serverInfo": { "name": "slopbox", "version": env!("CARGO_PKG_VERSION") }
+            "serverInfo": { "name": "slopdrive", "version": env!("CARGO_PKG_VERSION") }
             }))
         }
         "ping" => Ok(json!({})),

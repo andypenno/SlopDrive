@@ -5,15 +5,15 @@ RUN apk add --no-cache build-base
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
-RUN cargo build --release --locked && strip /src/target/release/slopbox
+RUN cargo build --release --locked && strip /src/target/release/slopdrive
 
 FROM docker.io/library/alpine:3.23
-RUN addgroup -g 10001 slopbox && adduser -D -H -u 10001 -G slopbox slopbox \
-    && mkdir /data && chown slopbox:slopbox /data
-COPY --from=build /src/target/release/slopbox /usr/local/bin/slopbox
+RUN addgroup -g 10001 slopdrive && adduser -D -H -u 10001 -G slopdrive slopdrive \
+    && mkdir /data && chown slopdrive:slopdrive /data
+COPY --from=build /src/target/release/slopdrive /usr/local/bin/slopdrive
 USER 10001:10001
 VOLUME /data
 EXPOSE 3000
 ENV STORAGE_PATH=/data BIND_ADDR=0.0.0.0:3000
-ENTRYPOINT ["/usr/local/bin/slopbox"]
+ENTRYPOINT ["/usr/local/bin/slopdrive"]
 CMD ["serve"]

@@ -1,6 +1,8 @@
+name: slopdrive
+
 services:
-  slopbox:
-    image: ghcr.io/andypenno/slopbox:${SLOPBOX_VERSION:?Set SLOPBOX_VERSION to a published release}
+  slopdrive:
+    image: ghcr.io/andypenno/slopdrive:${SLOPDRIVE_VERSION:?Set SLOPDRIVE_VERSION to a published release}
     restart: unless-stopped
     stop_grace_period: 15s
     ports:
@@ -9,8 +11,8 @@ services:
       BASE_URL: ${BASE_URL:?Set BASE_URL to the public HTTPS address}
       DATABASE_PROVIDER: postgres
       DATABASE_HOST: postgres
-      DATABASE_NAME: slopbox
-      DATABASE_USER: slopbox
+      DATABASE_NAME: slopdrive
+      DATABASE_USER: slopdrive
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD to a strong database password}
       DATABASE_TLS_MODE: disable
     depends_on:
@@ -20,11 +22,11 @@ services:
     image: docker.io/library/postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: slopbox
-      POSTGRES_USER: slopbox
+      POSTGRES_DB: slopdrive
+      POSTGRES_USER: slopdrive
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD to a strong database password}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U slopbox -d slopbox"]
+      test: ["CMD-SHELL", "pg_isready -U slopdrive -d slopdrive"]
       interval: 5s
       timeout: 3s
       retries: 10

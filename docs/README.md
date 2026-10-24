@@ -23,7 +23,7 @@ The root [AGENTS.md](../AGENTS.md) defines repository-wide rules. The root [READ
 | `containers/` | Containerfiles, their build ignore files and Compose deployment definitions. |
 | `release/` | Image publication and version promotion. These operations change registry state. |
 | `static/` | Assets embedded in the service, including the homepage. |
-| `skills/` | The SlopBox client skill distributed to publishing agents. |
+| `skills/` | The SlopDrive client skill distributed to publishing agents. |
 | `.github/` | CI workflows, dependency updates and ownership rules. |
 | `docs/` | Contributor conventions, operator references and deployment contracts. |
 | `test-output/` | Gitignored coverage, logs, measurements and review reports. |

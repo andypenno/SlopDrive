@@ -98,7 +98,7 @@ impl DatabaseConfig {
                                 StoreError::Configuration("invalid SQLite DATABASE_URL")
                             })?
                         }
-                        None => SqliteConnectOptions::new().filename(root.join("slopbox.sqlite")),
+                        None => SqliteConnectOptions::new().filename(root.join("slopdrive.sqlite")),
                     };
                     let path = options.get_filename();
                     if path == Path::new(":memory:")
@@ -169,7 +169,7 @@ impl DatabaseConfig {
     }
 
     fn postgres_options(&self) -> Result<(PgConnectOptions, &str), StoreError> {
-        let schema = self.schema.as_deref().unwrap_or("slopbox");
+        let schema = self.schema.as_deref().unwrap_or("slopdrive");
         if schema.is_empty()
             || schema.len() > 63
             || schema.starts_with("pg_")

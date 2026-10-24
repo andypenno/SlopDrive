@@ -26,7 +26,7 @@ const LEDGER: Table = Table {
 
 fn checksum(migration: &Migration) -> String {
     // Ordered structs/slices only. Encoding and enum names are part of the persisted format.
-    let canonical = serde_json::to_vec(&("slopbox-schema-v1", LEDGER, migration))
+    let canonical = serde_json::to_vec(&("slopdrive-schema-v1", LEDGER, migration))
         .expect("static schema serialization cannot fail");
     hash(&canonical)
 }

@@ -12,11 +12,11 @@ Run from the repository root:
 mkdir -p test-output
 python3 tests/performance/test_budgets.py
 python3 tests/performance/test_benchmark.py
-podman build --ignorefile containers/Containerfile.dockerignore -f containers/Containerfile -t localhost/slopbox:standard .
-podman build --ignorefile containers/Containerfile.alpine.dockerignore -f containers/Containerfile.alpine -t localhost/slopbox:alpine .
+podman build --ignorefile containers/Containerfile.dockerignore -f containers/Containerfile -t localhost/slopdrive:standard .
+podman build --ignorefile containers/Containerfile.alpine.dockerignore -f containers/Containerfile.alpine -t localhost/slopdrive:alpine .
 for variant in standard alpine; do
-  podman unshare skopeo copy --dest-compress --dest-compress-format gzip "containers-storage:localhost/slopbox:$variant" "oci-archive:$PWD/test-output/$variant.tar"
-  python3 tests/performance/benchmark.py --engine podman --image "localhost/slopbox:$variant" --archive "test-output/$variant.tar" --variant "$variant" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"
+  podman unshare skopeo copy --dest-compress --dest-compress-format gzip "containers-storage:localhost/slopdrive:$variant" "oci-archive:$PWD/test-output/$variant.tar"
+  python3 tests/performance/benchmark.py --engine podman --image "localhost/slopdrive:$variant" --archive "test-output/$variant.tar" --variant "$variant" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"
 done
 ```
 

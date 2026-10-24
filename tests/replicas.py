@@ -13,7 +13,7 @@ from container_smoke import ready, request, tool
 
 
 def run_mode(binary, database, content, output_directory):
-    with tempfile.TemporaryDirectory(prefix="slopbox-replicas-") as directory:
+    with tempfile.TemporaryDirectory(prefix="slopdrive-replicas-") as directory:
         root = Path(directory)
         settings = {key: value for key, value in os.environ.items()
                     if not key.startswith(("DATABASE_", "S3_", "CONTENT_STORAGE"))}

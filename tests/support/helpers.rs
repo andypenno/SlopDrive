@@ -9,7 +9,7 @@ use tower::ServiceExt;
 pub(crate) async fn sqlite_startup_lock(root: &std::path::Path) -> TestWriteLock {
     let pool = SqlitePool::connect_with(
         sqlx::sqlite::SqliteConnectOptions::new()
-            .filename(root.join("slopbox.sqlite"))
+            .filename(root.join("slopdrive.sqlite"))
             .create_if_missing(true)
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Delete),
     )
@@ -164,7 +164,7 @@ pub(crate) struct TestApp {
 
 impl TestApp {
     pub(crate) async fn new() -> Self {
-        let s3 = if std::env::var("SLOPBOX_TEST_CONTENT").as_deref() == Ok("s3") {
+        let s3 = if std::env::var("SLOPDRIVE_TEST_CONTENT").as_deref() == Ok("s3") {
             Some(crate::test_s3::TestS3::new().await)
         } else {
             None
@@ -208,10 +208,10 @@ impl TestApp {
             connect_timeout_ms: 5000,
             query_timeout_ms: 5000,
         };
-        config.provider = match std::env::var("SLOPBOX_TEST_PROVIDER").as_deref() {
+        config.provider = match std::env::var("SLOPDRIVE_TEST_PROVIDER").as_deref() {
             Ok("postgres") => database::Provider::Postgres,
             Ok("sqlite") | Err(_) => database::Provider::Sqlite,
-            _ => panic!("invalid SLOPBOX_TEST_PROVIDER"),
+            _ => panic!("invalid SLOPDRIVE_TEST_PROVIDER"),
         };
         if config.provider == database::Provider::Postgres {
             config.url = Some(
@@ -226,7 +226,7 @@ impl TestApp {
             database::Provider::Sqlite => TestDatabase::Sqlite(
                 SqlitePool::connect(&format!(
                     "sqlite:{}",
-                    dir.path().join("slopbox.sqlite").display()
+                    dir.path().join("slopdrive.sqlite").display()
                 ))
                 .await
                 .unwrap(),

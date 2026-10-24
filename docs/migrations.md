@@ -6,7 +6,7 @@ The model supports table creation, typed columns, nullability, primary and uniqu
 
 ## Checksums and application
 
-Each ledger checksum hashes UTF-8 JSON for the ordered tuple `("slopbox-schema-v1", LEDGER, migration)` using SHA-256. Serialization uses declaration-order struct fields, enum names and ordered slices. There are no maps or provider SQL strings in this encoding. Field and variant names, ordering, ledger definitions and encoding version are persisted format. Changing them changes checksums. Freeze applied definitions; append new versions in contiguous order starting at 1.
+Each ledger checksum hashes UTF-8 JSON for the ordered tuple `("slopdrive-schema-v1", LEDGER, migration)` using SHA-256. Serialization uses declaration-order struct fields, enum names and ordered slices. There are no maps or provider SQL strings in this encoding. Field and variant names, ordering, ledger definitions and encoding version are persisted format. Changing them changes checksums. Freeze applied definitions; append new versions in contiguous order starting at 1.
 
 Initialization validates every recorded version and checksum before applying pending migrations. SQLite holds `BEGIN IMMEDIATE`; PostgreSQL holds a schema-scoped transaction advisory lock. Schema operations, ledger inserts and S3 binding share the startup transaction. Failure rolls back pending DDL and ledger entries. No migration runner resets a database or removes objects.
 

@@ -4,7 +4,7 @@ use std::process::Command;
 fn s3_configuration_errors_do_not_disclose_credentials() {
     let dir = tempfile::tempdir().unwrap();
     let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .env("DATABASE_PROVIDER", "sqlite")
             .env("CONTENT_STORAGE", "s3")
             .env("S3_ENDPOINT", "https://user:private-password@example.com")
@@ -31,7 +31,7 @@ mod process;
 fn database_provider_must_not_fall_back_to_filesystem() {
     let dir = tempfile::tempdir().unwrap();
     let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .env("DATABASE_PROVIDER", "unknown")
             .arg("--storage-path")
             .arg(dir.path())
@@ -45,13 +45,13 @@ fn database_provider_must_not_fall_back_to_filesystem() {
 fn key_cli_create_list_revoke_and_errors() {
     for provider in ["sqlite", "postgres"] {
         if provider == "postgres"
-            && std::env::var("SLOPBOX_TEST_PROVIDER").as_deref() != Ok("postgres")
+            && std::env::var("SLOPDRIVE_TEST_PROVIDER").as_deref() != Ok("postgres")
         {
             continue;
         }
         let dir = tempfile::tempdir().unwrap();
         let run = |args: &[&str]| {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_slopbox"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_slopdrive"));
             command
                 .arg("--storage-path")
                 .arg(dir.path())
@@ -85,7 +85,7 @@ fn key_cli_create_list_revoke_and_errors() {
         let output = String::from_utf8(created.stdout).unwrap();
         let (id, key) = output.trim().split_once(' ').unwrap();
         assert_eq!(id.len(), 16);
-        assert!(key.starts_with(&format!("sb_{id}_")));
+        assert!(key.starts_with(&format!("sd_{id}_")));
         assert_eq!(key.len(), 84);
 
         let listed = run(&["keys", "list"]);
@@ -136,7 +136,7 @@ fn database_configuration_rejects_conflicts_without_disclosing_secrets() {
         vec![("DATABASE_MAX_CONNECTIONS", "0")],
     ] {
         let output = process::output(
-            Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
                 .arg(dir.path())
                 .args(["keys", "list"])
@@ -161,7 +161,7 @@ fn serve_rejects_non_origin_base_urls() {
         "https://user@example.com/",
     ] {
         let output = process::output(
-            Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
                 .arg(dir.path())
                 .args(["serve", "--base-url", url])
@@ -180,7 +180,7 @@ fn serve_reports_bind_failure_and_honors_environment_configuration() {
     let dir = tempfile::tempdir().unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .env("STORAGE_PATH", dir.path())
             .env("BASE_URL", "http://localhost/")
             .env("BIND_ADDR", listener.local_addr().unwrap().to_string())
@@ -188,7 +188,7 @@ fn serve_reports_bind_failure_and_honors_environment_configuration() {
     );
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("bind failed"));
-    assert!(dir.path().join("slopbox.sqlite").is_file());
+    assert!(dir.path().join("slopdrive.sqlite").is_file());
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn cli_reports_storage_initialization_failures() {
         vec!["serve", "--base-url", "http://localhost/"],
     ] {
         let output = process::output(
-            Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
                 .arg(&blocker)
                 .args(args),
@@ -215,16 +215,16 @@ fn cli_reports_storage_initialization_failures() {
 #[test]
 fn serve_reports_database_initialization_failure() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("slopbox.sqlite")).unwrap();
+    std::fs::create_dir(dir.path().join("slopdrive.sqlite")).unwrap();
     let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .arg("--storage-path")
             .arg(dir.path())
             .args(["serve", "--base-url", "http://localhost/"]),
     );
     assert!(!output.status.success());
     assert!(!output.stderr.is_empty());
-    assert!(dir.path().join("slopbox.sqlite").is_dir());
+    assert!(dir.path().join("slopdrive.sqlite").is_dir());
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn startup_rejection_tests_cannot_wait_forever_for_a_server() {
     drop(listener);
     let started = std::time::Instant::now();
     let child = process::Process::spawn(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .arg("--storage-path")
             .arg(dir.path())
             .args([
@@ -263,7 +263,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
     for signal in ["TERM", "INT"] {
         let dir = tempfile::tempdir().unwrap();
         let created = process::output(
-            Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
                 .arg(dir.path())
                 .args(["keys", "create"]),
@@ -274,7 +274,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
         let address = listener.local_addr().unwrap();
         drop(listener);
         let mut child = process::Process::spawn(
-            Command::new(env!("CARGO_BIN_EXE_slopbox"))
+            Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
                 .arg(dir.path())
                 .args([
@@ -328,7 +328,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
         runtime.block_on(async {
             let pool = sqlx::SqlitePool::connect(&format!(
                 "sqlite:{}",
-                dir.path().join("slopbox.sqlite").display()
+                dir.path().join("slopdrive.sqlite").display()
             ))
             .await
             .unwrap();
@@ -353,7 +353,7 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
     use std::time::{Duration, Instant};
     let dir = tempfile::tempdir().unwrap();
     let output = process::output(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .arg("--storage-path")
             .arg(dir.path())
             .args(["keys", "create"]),
@@ -364,7 +364,7 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
     let address = listener.local_addr().unwrap();
     drop(listener);
     let mut child = process::Process::spawn(
-        Command::new(env!("CARGO_BIN_EXE_slopbox"))
+        Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .arg("--storage-path")
             .arg(dir.path())
             .args([
@@ -401,7 +401,7 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
     runtime.block_on(async {
         let pool = sqlx::SqlitePool::connect(&format!(
             "sqlite:{}",
-            dir.path().join("slopbox.sqlite").display()
+            dir.path().join("slopdrive.sqlite").display()
         ))
         .await
         .unwrap();
