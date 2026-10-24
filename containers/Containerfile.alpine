@@ -5,7 +5,6 @@ RUN apk add --no-cache build-base
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
-COPY migrations ./migrations
 RUN cargo build --release --locked && strip /src/target/release/slopbox
 
 FROM docker.io/library/alpine:3.23

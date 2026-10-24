@@ -10,9 +10,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "containers"))
-spec = importlib.util.spec_from_file_location("benchmark", ROOT / "containers/benchmark.py")
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+spec = importlib.util.spec_from_file_location("benchmark", HERE / "benchmark.py")
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 

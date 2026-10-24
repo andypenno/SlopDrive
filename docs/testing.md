@@ -6,7 +6,7 @@ Run `node tests/homepage.cjs` for homepage clipboard behavior. This dependency-f
 
 Run `python3 tests/releases.py` for version validation, immutable image promotion, and channel ordering. Run `python3 tests/compose.py docker compose` for image selection and deployment settings. Container CI tests both exported image variants with Docker and Podman, including switching a populated data volume between variants.
 
-Run `python3 tests/performance.py` and `python3 tests/benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
+Run `python3 tests/performance/test_budgets.py` and `python3 tests/performance/test_benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
 
 Use real routers and temporary stores for transport tests. Test successful requests, malformed inputs, exact size boundaries, missing data, retries, historical versions, and failure redaction. Paired HTTP and MCP checks must exercise the same shared behavior. Inspect complete version sets and retrieve their bytes when testing concurrency.
 
@@ -35,7 +35,9 @@ SLOPBOX_TEST_PROVIDER=postgres DATABASE_TEST_POSTGRES_URL=postgres://user:passwo
 
 Use a disposable database with schema creation permission. Tests disable TLS for this local service. CLI key tests exercise PostgreSQL only when `SLOPBOX_TEST_PROVIDER=postgres` is explicitly set. Supply a disposable database externally. Ordinary local and CI tests do not start an external database service. Fixture schemas remain until the disposable database is removed.
 
-Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, migration compatibility and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.
+Database changes must cover rollback, retries, restore, restart persistence, concurrent writers, revocation, fresh baseline creation, pending migration rollback, ledger validation and redacted errors on both providers. Keep image and performance budgets unchanged unless the owner approves a measured adjustment.
+
+Migration tests use the same typed definitions on both providers. A test-only second migration proves pending history application without preserving obsolete SQL snapshots. Constraint checks cover canonical identifiers, byte locations, bounds and relationships. Existing pre-1.x databases are deliberately rejected, not upgraded.
 
 ## S3 contracts and independent processes
 

@@ -8,8 +8,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
-ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("performance", ROOT / "containers/performance.py")
+HERE = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location("performance", HERE / "budgets.py")
 performance = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(performance)
 
@@ -64,7 +64,7 @@ def policy_and_report():
 
 
 def check_policy_boundaries():
-    policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
+    policy = json.loads((HERE / "policy.json").read_text())
     _, report = policy_and_report()
     report["policy_sha256"] = performance.policy_hash(policy)
     report["samples"] = [copy.deepcopy(report["samples"][0]) for _ in range(policy["runs"])]
@@ -197,7 +197,7 @@ def check_oci_size():
 
 
 def check_runner_cpu_allowances():
-    policy = json.loads((ROOT / "containers/performance-policy.json").read_text())
+    policy = json.loads((HERE / "policy.json").read_text())
     _, report = policy_and_report()
     report["policy_sha256"] = performance.policy_hash(policy)
     report["image"].update(compressed_bytes=1, unpacked_bytes=1)

@@ -10,13 +10,13 @@ Run from the repository root:
 
 ```sh
 mkdir -p test-output
-python3 tests/performance.py
-python3 tests/benchmark.py
+python3 tests/performance/test_budgets.py
+python3 tests/performance/test_benchmark.py
 podman build --ignorefile containers/Containerfile.dockerignore -f containers/Containerfile -t localhost/slopbox:standard .
 podman build --ignorefile containers/Containerfile.alpine.dockerignore -f containers/Containerfile.alpine -t localhost/slopbox:alpine .
 for variant in standard alpine; do
   podman unshare skopeo copy --dest-compress --dest-compress-format gzip "containers-storage:localhost/slopbox:$variant" "oci-archive:$PWD/test-output/$variant.tar"
-  python3 containers/benchmark.py --engine podman --image "localhost/slopbox:$variant" --archive "test-output/$variant.tar" --variant "$variant" --policy containers/performance-policy.json --output "test-output/performance-$variant.json"
+  python3 tests/performance/benchmark.py --engine podman --image "localhost/slopbox:$variant" --archive "test-output/$variant.tar" --variant "$variant" --policy tests/performance/policy.json --output "test-output/performance-$variant.json"
 done
 ```
 
@@ -26,7 +26,7 @@ Each invocation has a 20-minute timeout. Ctrl+C or SIGTERM cleans up its contain
 
 ## Workload and limits
 
-The approved policy is [containers/performance-policy.json](../containers/performance-policy.json). Both variants get one CPU, 256 MiB of memory, no swap, and three fresh-storage repetitions. Each workload performs 600 verified operations at concurrency four, with five-second idle and recovery intervals.
+The approved policy is [tests/performance/policy.json](../tests/performance/policy.json). Both variants get one CPU, 256 MiB of memory, no swap, and three fresh-storage repetitions. Each workload performs 600 verified operations at concurrency four, with five-second idle and recovery intervals.
 
 Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. Writes alternate HTTP uploads, MCP uploads, and MCP updates. Each timed write includes retrieval and history verification; written versions must also survive a restart. Histories start with 100 versions. Rejection workloads cover invalid authentication, missing pages, and oversized MCP content.
 

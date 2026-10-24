@@ -39,7 +39,9 @@ Revoking a key takes effect without a restart. SQLite stores pages, history and 
 
 Builds with S3 support can store HTML through a configurable S3-compatible endpoint while SQLite or PostgreSQL retains metadata and keys. See [HTML content storage](docs/content-storage.md) for Garage configuration, the PostgreSQL/S3 Compose example and upgrade requirements. This option is not available in the 0.2.0 image.
 
-To update, change `SLOPBOX_VERSION`, then repeat `pull` and `up -d`. Keep the data volume; `down --volumes` deletes it. Check release notes for storage compatibility before rolling back.
+Source builds now use a fresh migration baseline. Older development databases require [manual recreation](docs/database.md#schema-and-backups), which loses metadata, keys and S3 object references.
+
+To update a compatible installation, change `SLOPBOX_VERSION`, then repeat `pull` and `up -d`. Keep the data volume; `down --volumes` deletes it. Check release notes for storage compatibility before rolling back.
 
 ### Build locally
 

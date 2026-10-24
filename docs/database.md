@@ -1,6 +1,6 @@
 # Database configuration
 
-SQLite is the default. One database stores version history, latest selections and API key hashes. HTML bytes also live there unless [S3 content storage](content-storage.md) is selected. HTTP, MCP and CLI commands use the same backend and settings. Both providers implement the same contract. Existing filesystem installations are not imported; rebuild alpha installations from scratch.
+SQLite is the default. One database stores version history, latest selections and API key hashes. HTML bytes also live there unless [S3 content storage](content-storage.md) is selected. HTTP, MCP and CLI commands use the same backend and settings. Both providers implement the same contract. Pre-1.x databases from older schema histories are not imported; recreate development databases manually.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -38,7 +38,9 @@ The PostgreSQL example disables database TLS on the local container network. For
 
 ## Schema and backups
 
-Migrations are embedded from `migrations/sqlite/` and `migrations/postgres/`. Initialization holds a database lock and records migration checksums in `schema_migrations`. Concurrent startup is serialized. A changed checksum or a schema newer than the binary is rejected. Add paired migrations for schema changes and test both providers. Never edit an applied migration or manually change the ledger to bypass compatibility checks.
+The shared [migration definitions](../src/database/migrations/v001.rs) describe one complete version-1 schema. SQLite and PostgreSQL render the same typed tables, constraints and relationships with their own SQL syntax. See [migration conventions](migrations.md) when changing the schema. Initialization holds a database lock and applies pending definitions with their ledger entries in one transaction. Concurrent startup is serialized. A changed checksum, missing ledger entry or schema newer than the binary is rejected.
+
+This baseline replaces the earlier provider-specific histories. Stop SlopBox and CLI writers, preserve any backups you need, then manually recreate the SQLite database or the dedicated PostgreSQL schema before starting this build. Recreating the database loses upload IDs, version history, API keys and S3 object references. Create new keys afterward. SlopBox never resets a database or deletes S3 objects automatically. Existing objects remain private and unreferenced; they cannot reconstruct the deleted metadata.
 
 For SQLite, stop writers and back up the entire data directory, including any WAL files. For online backups use SQLite's backup API or its `.backup` command; copying only the main file while writers run can lose committed data. For PostgreSQL use `pg_dump` and test restoring into a fresh database. Backups contain publisher key hashes and private metadata, so restrict access. Rollbacks require a schema-compatible binary or a tested backup restore.
 

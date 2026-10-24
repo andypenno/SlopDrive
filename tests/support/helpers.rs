@@ -122,7 +122,7 @@ impl TestDatabase {
             }
         }
     }
-    async fn execute(&self, sql: &str) -> Result<(), sqlx::Error> {
+    pub(crate) async fn execute(&self, sql: &str) -> Result<(), sqlx::Error> {
         macro_rules! run {
             ($pool:expr) => {{
                 let mut connection = $pool.acquire().await?;

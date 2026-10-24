@@ -20,7 +20,7 @@ Version and commit tags are immutable. A repeated branch publication reuses the 
 
 ## Builds and checks
 
-The reusable [container workflow](../.github/workflows/containers.yml) handles both branches and PR checks. Container definitions, Compose, and the release helper live in [containers/](../containers/). Every build uses the repository root as its context.
+The reusable [container workflow](../.github/workflows/containers.yml) handles both branches and PR checks. Container definitions and Compose files live in [containers/](../containers/). Image publication and promotion use [release/images.py](../release/images.py). Every build uses the repository root as its context.
 
 The standard variant uses Debian slim and glibc. Alpine builds its own musl binary and uses an Alpine runtime. Both keep UID/GID 10001, `/data`, port 3000, the CLI, and the same environment variables. Keep both Rust builder versions aligned with CI.
 

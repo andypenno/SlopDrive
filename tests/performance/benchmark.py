@@ -17,7 +17,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from performance import evaluate, number, oci_size, policy_hash, validate_policy
+from budgets import evaluate, number, oci_size, policy_hash, validate_policy
 
 
 def command(*args):
@@ -366,7 +366,7 @@ def main():
     model = next((line.split(":", 1)[1].strip() for line in cpu_info if line.startswith("model name")), "unknown")
     report = {
         "schema": 1, "variant": args.variant, "profile": args.profile, "policy_sha256": policy_hash(policy), "runner_pid": os.getpid(),
-        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes() + Path(__file__).with_name("performance.py").read_bytes()).hexdigest(),
+        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes() + Path(__file__).with_name("budgets.py").read_bytes()).hexdigest(),
         "complete": False, "diagnostic": args.collect_only, "samples": [],
         "host": {"kernel": platform.release(), "machine": platform.machine(), "engine": command(args.engine, "--version"), "cpu": model, "logical_cpus": os.cpu_count()},
     }

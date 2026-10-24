@@ -169,7 +169,7 @@ async fn constraints_rollback_partial_writes_and_reject_newer_schema() {
         b"<p>original</p>"
     );
     assert!(fixture.db.rejects_missing_latest(&saved.upload_id).await);
-    fixture.db.set_schema_version(3).await;
+    fixture.db.set_schema_version(2).await;
     assert!(matches!(
         fixture.config.open(fixture.dir.path()).await,
         Err(StoreError::Configuration(_))
