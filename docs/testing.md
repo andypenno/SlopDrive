@@ -1,18 +1,18 @@
 # Testing conventions
 
-Run the checks required by [AGENTS.md](../AGENTS.md) before committing code. A bug fix needs a check that fails on the original behavior. Exercise observable results and preservation of data, not only status codes or counts.
+Run the checks required by [AGENTS.md](../AGENTS.md) before committing code. Run `cargo audit --deny unsound` with the cargo-audit version pinned in [CI](../.github/workflows/ci.yml) for the release dependency check. A bug fix needs a check that fails on the original behavior. Exercise observable results and preservation of data, not only status codes or counts.
 
 Run `node tests/homepage.cjs` for homepage clipboard behavior. This dependency-free check executes the page's script with successful, denied, and unavailable clipboard access. Also check the page in a browser for layout, keyboard access, and actual clipboard permissions.
 
 Run `python3 tests/releases.py` for version validation, immutable image promotion, and channel ordering. Run `python3 tests/compose.py docker compose` for image selection and deployment settings. Container CI tests both exported image variants with Docker and Podman, including switching a populated data volume between variants.
 
-Run `python3 tests/performance/test_budgets.py` and `python3 tests/performance/test_benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for the local container command and calibration requirements.
+Run `python3 tests/performance/test_budgets.py` and `python3 tests/performance/test_benchmark.py` for measurement and budget validation. See [performance budgets](performance.md) for local container commands, calibration requirements and optional PostgreSQL/S3 targets. External backend measurements require disposable fixtures supplied by the operator; CI neither provisions nor connects to them.
 
 Use real routers and temporary stores for transport tests. Test successful requests, malformed inputs, exact size boundaries, missing data, retries, historical versions, and failure redaction. Paired HTTP and MCP checks must exercise the same shared behavior. Inspect complete version sets and retrieve their bytes when testing concurrency.
 
 Keep private-state unit checks attached to their owning module with `cfg(test)` and a path into the test directory. Integration executables are explicit Cargo test targets; add a target when adding one. Disabling automatic integration discovery prevents private unit modules from being compiled a second time as standalone crates. Keep fixture construction in test-only helpers rather than exposing production internals.
 
-Own every temporary directory, listener, and child process. Avoid filesystem races, existing live services, and shared mutable fixtures. Use bounded polling for process readiness. Waits that exercise deadlines must remain bounded and check the outcome. Stop owned processes and remove scratch data when a check finishes. Use deterministic filesystem faults where possible; do not add production abstractions merely to force entropy or disk-sync failures.
+Own every temporary directory, listener, and child process. Avoid filesystem races, existing live services, and shared mutable fixtures. Use bounded polling for process readiness. Shutdown checks must establish request admission and observed shutdown, not rely on fixed sleeps. Waits that exercise deadlines must remain bounded and check the outcome. Stop owned processes and remove scratch data when a check finishes. Use deterministic filesystem faults where possible; do not add production abstractions merely to force entropy or disk-sync failures.
 
 Capture generated results outside the documentation:
 

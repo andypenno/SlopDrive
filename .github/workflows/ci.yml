@@ -15,6 +15,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install audit tool
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 install cargo-audit --version 0.22.2 --locked --no-default-features
+      - run: cargo audit --deny unsound
+
   verify:
     name: Rust checks
     runs-on: ubuntu-24.04
@@ -48,7 +62,7 @@ jobs:
 
   containers:
     name: Container checks
-    needs: verify
+    needs: [verify, audit]
     uses: ./.github/workflows/containers.yml
     permissions:
       contents: read

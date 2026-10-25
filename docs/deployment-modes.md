@@ -60,7 +60,7 @@ S3 and SQL do not share an atomic transaction. Store bytes before publishing the
 
 Changing configuration must not silently move, discard or reinterpret existing content. Record enough location information to resolve stored versions and reject incompatible configuration. Migration between databases or content stores requires an explicit procedure that preserves upload IDs, hashes, timestamps, ordering, latest selections and key hashes. Define and test that procedure before advertising a backend switch as supported.
 
-This pre-1.x baseline replaces earlier schema histories without an upgrade path. Older development databases must be [recreated manually](database.md#schema-and-backups). SlopDrive never resets databases, exports HTML or deletes S3 objects automatically. A rollback requires a binary compatible with the schema and recorded content locations, or a tested backup restore.
+The 1.0.0 baseline replaces earlier development schema histories without an upgrade path. Older development databases must be [recreated manually](database.md#schema-and-backups). SlopDrive never resets databases, exports HTML or deletes S3 objects automatically. A rollback requires a binary compatible with the schema and recorded content locations, or a tested backup restore.
 
 Inline modes need a database backup. S3 modes need the database and every referenced object. A database backup alone cannot restore externally stored HTML. Coordinate backups to retain the objects referenced by the database snapshot, and test restoration before relying on them. Never apply expiration rules that can remove recorded versions.
 

@@ -41,7 +41,7 @@ For multiple SlopDrive replicas, use PostgreSQL with identical schema, content s
 
 ## Existing data and upgrades
 
-This pre-1.x build uses a fresh version-1 schema and rejects the earlier migration histories. Follow the [manual database recreation requirements](database.md#schema-and-backups) before starting it against an older development installation. Recreation loses metadata and S3 object references. It does not delete objects or import existing HTML. Stop SlopDrive and CLI writers before recreation or a content-mode change.
+Version 1.0.0 uses the version-1 schema and rejects earlier development migration histories. Follow the [manual database recreation requirements](database.md#schema-and-backups) before starting it against an older development installation. Recreation loses metadata and S3 object references. It does not delete objects or import existing HTML. Stop SlopDrive and CLI writers before recreation or a content-mode change.
 
 Enabling S3 explicitly changes where new distinct versions are written. Existing inline versions stay inline, and retries or historical restores repair their recorded location. No automatic export occurs. One upload can therefore have both inline and external versions, which SlopDrive resolves from their metadata.
 
