@@ -1,12 +1,12 @@
 # Storage and key conventions
 
-The shared [Storage interface](../src/storage.rs) holds every durable record. HTTP, MCP and key management use provider-neutral types; SQL and driver errors belong under `src/database/`. Add providers by implementing that interface and passing the shared contracts. [Database configuration](database.md) covers deployment, settings, schema changes and backups.
+The shared [Storage interface](../src/storage.rs) coordinates every durable record. HTTP, MCP and key management use provider-neutral types; SQL and driver errors belong under `src/database/`. S3 content operations live in `src/content.rs`. [Database configuration](database.md) and [HTML content storage](content-storage.md) cover settings, schema changes and backups.
 
-Create and update transactions publish the content and latest selection together. Pre-commit failures preserve existing history and leave no partial new upload. Database constraints enforce canonical IDs, content hashes, sizes, unique versions and latest membership. SQLite serializes writers with `BEGIN IMMEDIATE`; PostgreSQL locks the upload row for updates. Independent connections must retain every distinct concurrent version.
+Create and update transactions publish version metadata and latest selection together. Inline bytes join that transaction; S3 bytes are stored before taking publication locks. Pre-commit failures preserve existing history and leave no partial new upload, but may leave private unreferenced objects. Never delete those objects as compensation. The [shared schema](migrations.md) defines database constraints that enforce canonical IDs, content hashes, sizes, unique versions, latest membership and exclusive inline/object locations. SQLite serializes writers with `BEGIN IMMEDIATE`; PostgreSQL locks the upload row for updates. Independent connections must retain every distinct concurrent version.
 
 Distinct content adds one version. Same-content retries and historical restores retain the original timestamp and size. A retry repairs corrupted bytes without duplicating history. Public reads validate the selected bytes against their stored hash and size. Version lists validate metadata and latest membership.
 
-Print plaintext keys only from the creation command. Store their hashes and query the database on every authentication attempt so cross-process revocation takes effect immediately. Invalid records and database failures fail closed. Do not expose raw database errors or credentials in either transport.
+The creation command emits `sd_<id>_<secret>` keys. Print plaintext keys only from that command. Store their hashes and query the database on every authentication attempt so cross-process revocation takes effect immediately. Invalid records and database failures fail closed. Do not expose raw database errors or credentials in either transport.
 
 A lost commit acknowledgement is uncertain. HTTP returns 503 and MCP tells the caller that the write may have committed. Retry the same content. Verify durability by reopening the database, not only by inspecting the original connection.
 

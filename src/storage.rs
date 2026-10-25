@@ -4,6 +4,8 @@ use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("object storage operation failed")]
+    ObjectStorage,
     #[error("not found")]
     NotFound,
     #[error("invalid identifier")]

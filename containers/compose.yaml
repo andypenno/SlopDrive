@@ -1,6 +1,8 @@
+name: slopdrive
+
 services:
-  slopbox:
-    image: ghcr.io/andypenno/slopbox:${SLOPBOX_VERSION:?Set SLOPBOX_VERSION to a published X.Y.Z release or X.Y.Z-alpine}
+  slopdrive:
+    image: ghcr.io/andypenno/slopdrive:${SLOPDRIVE_VERSION:?Set SLOPDRIVE_VERSION to a published X.Y.Z release or X.Y.Z-alpine}
     restart: unless-stopped
     stop_grace_period: 15s
     ports:
@@ -8,7 +10,7 @@ services:
     environment:
       BASE_URL: ${BASE_URL:?Set BASE_URL to the public HTTPS address}
     volumes:
-      - slopbox-data:/data
+      - slopdrive-data:/data
 
 volumes:
-  slopbox-data:
+  slopdrive-data:

@@ -13,6 +13,22 @@ SCENARIOS = {
     **{name: {"memory_bytes": "max", "cpu_ms_per_op": "max", "p95_ms": "max", "operations_per_second": "min"} for name in ("read", "write", "reject")},
 }
 REFERENCE_METRICS = {"cpu_ms_per_op", "operations_per_second"}
+MODES = ("sqlite-database", "postgres-database", "sqlite-s3", "postgres-s3")
+
+
+def limits_for(policy, mode):
+    if mode not in MODES:
+        raise ValueError("unknown storage mode")
+    limits = {scenario: dict(metrics) for scenario, metrics in policy["scenario_limits"].items()}
+    if mode != "sqlite-database":
+        overrides = policy["backend_limits"][mode]
+        if not isinstance(overrides, dict):
+            raise ValueError("backend limits must be an object")
+        for scenario, metrics in overrides.items():
+            if scenario not in SCENARIOS or not isinstance(metrics, dict) or set(metrics) - set(SCENARIOS[scenario]):
+                raise ValueError("invalid backend limit override")
+            limits[scenario].update(metrics)
+    return limits
 
 
 def number(value, name):
@@ -30,15 +46,19 @@ def validate_policy(policy):
         raise ValueError("invalid performance policy schema or run count")
     if set(policy.get("scenario_limits", {})) != set(SCENARIOS):
         raise ValueError("policy must cover every required scenario")
-    for scenario, metrics in SCENARIOS.items():
-        limits = policy["scenario_limits"][scenario]
-        if set(limits) != set(metrics):
-            raise ValueError("policy must cover every required metric: " + scenario)
-        for metric, direction in metrics.items():
-            if set(limits[metric]) != {direction}:
-                raise ValueError("incorrect budget direction: " + metric)
-            if number(limits[metric][direction], metric) <= 0:
-                raise ValueError("budget must be positive: " + metric)
+    if not isinstance(policy.get("backend_limits"), dict) or set(policy["backend_limits"]) != set(MODES[1:]):
+        raise ValueError("every external backend mode needs explicit limits")
+    for mode in MODES:
+        mode_limits = limits_for(policy, mode)
+        for scenario, metrics in SCENARIOS.items():
+            limits = mode_limits[scenario]
+            if set(limits) != set(metrics):
+                raise ValueError("policy must cover every required metric: " + scenario)
+            for metric, direction in metrics.items():
+                if set(limits[metric]) != {direction}:
+                    raise ValueError("incorrect budget direction: " + metric)
+                if number(limits[metric][direction], metric) <= 0:
+                    raise ValueError("budget must be positive: " + metric)
     if set(policy.get("image_limits", {})) != {"standard", "alpine"}:
         raise ValueError("both image variants need limits")
     for limits in policy["image_limits"].values():
@@ -87,6 +107,8 @@ def evaluate(policy, report):
     profile = report.get("profile")
     if profile not in policy["reference"]["profiles"]:
         raise ValueError("unknown runner profile")
+    mode = report.get("mode")
+    scenario_limits = limits_for(policy, mode)
     image = report.get("image", {})
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image.get("digest", "")):
         raise ValueError("missing immutable image identity")
@@ -112,10 +134,10 @@ def evaluate(policy, report):
                     raise ValueError("incomplete workload: " + scenario)
             for metric, direction in metrics.items():
                 value = number(values.get(metric), scenario + "." + metric)
-                bound = policy["scenario_limits"][scenario][metric][direction]
+                bound = scenario_limits[scenario][metric][direction]
                 if (direction == "max" and value > bound) or (direction == "min" and value < bound):
                     failures.append(f"run {index + 1} {scenario}.{metric}: {value} violates {direction} {bound}")
-                if scenario in ("read", "write", "reject") and metric == "cpu_ms_per_op":
+                if mode == "sqlite-database" and scenario in ("read", "write", "reject") and metric == "cpu_ms_per_op":
                     reference = policy["reference"]
                     baseline = reference["profiles"][profile][variant][scenario][metric]
                     ratio = reference["maximum_ratio"]

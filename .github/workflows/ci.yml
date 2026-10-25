@@ -15,6 +15,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install audit tool
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 install cargo-audit --version 0.22.2 --locked --no-default-features
+      - run: cargo audit --deny unsound
+
   verify:
     name: Rust checks
     runs-on: ubuntu-24.04
@@ -30,18 +44,25 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: S3 storage contracts
+        run: SLOPDRIVE_TEST_CONTENT=s3 cargo test --locked --bin slopdrive
+      - name: Running service storage checks
+        run: |
+          cargo build --locked
+          python3 tests/replicas.py --binary target/debug/slopdrive
+          python3 tests/content_tls.py --binary target/debug/slopdrive
       - name: Homepage clipboard checks
         run: node tests/homepage.cjs
       - name: Release policy checks
         run: python3 tests/releases.py
       - name: Performance measurement checks
         run: |
-          python3 tests/performance.py
-          python3 tests/benchmark.py
+          python3 tests/performance/test_budgets.py
+          python3 tests/performance/test_benchmark.py
 
   containers:
     name: Container checks
-    needs: verify
+    needs: [verify, audit]
     uses: ./.github/workflows/containers.yml
     permissions:
       contents: read
@@ -50,7 +71,7 @@ jobs:
   publish:
     name: Publish tested images
     needs: containers
-    if: github.event_name == 'push' && github.repository == 'andypenno/SlopBox' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    if: github.event_name == 'push' && github.repository == 'andypenno/SlopDrive' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -85,4 +106,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
-          python3 containers/release.py publish --archives "$ARCHIVES" --branch "$BRANCH" --sha "$COMMIT"
+          python3 release/images.py publish --archives "$ARCHIVES" --branch "$BRANCH" --sha "$COMMIT"

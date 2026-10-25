@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-IMAGE = "ghcr.io/andypenno/slopbox"
+IMAGE = "ghcr.io/andypenno/slopdrive"
 VARIANTS = ("standard", "alpine")
 
 
@@ -98,7 +98,7 @@ def promote(value, sha):
 
 def update_branch(branch, sha, images):
     channel = branch_channel(branch)
-    remote = command("gh", "api", "repos/andypenno/SlopBox/git/ref/heads/" + branch, "--jq", ".object.sha")
+    remote = command("gh", "api", "repos/andypenno/SlopDrive/git/ref/heads/" + branch, "--jq", ".object.sha")
     if not re.fullmatch(r"[0-9a-f]{40}", remote):
         raise ValueError("branch does not exist on origin")
     if remote != sha:

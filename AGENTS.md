@@ -1,4 +1,4 @@
-# SlopBox
+# SlopDrive
 
 - Keep the service as one Rust binary. HTTP, MCP, and CLI operations must use the same storage and key store.
 - Keep the HTTP API and MCP surfaces in sync. Share validation, storage operations, URL construction, and error policy; add paired transport tests when shared behavior changes.

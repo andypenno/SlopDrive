@@ -78,7 +78,7 @@ async fn auth_precedes_body_parsing_and_public_reads_need_no_key() {
         .send(request(Method::GET, "/", None, None, Body::empty()))
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(String::from_utf8(root).unwrap().contains("SlopBox"));
+    assert!(String::from_utf8(root).unwrap().contains("SlopDrive"));
     let (status, _) = fixture.post_html("/upload", b"<html>public</html>").await;
     assert_eq!(status, StatusCode::OK);
 }

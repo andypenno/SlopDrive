@@ -1,7 +1,8 @@
 [package]
-name = "slopbox"
-version = "0.2.0"
+name = "slopdrive"
+version = "1.0.0"
 edition = "2024"
+license = "AGPL-3.0-only"
 # Private unit modules are compiled by their owners, not as integration crates.
 autotests = false
 
@@ -13,6 +14,10 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 getrandom = "0.4"
 hex = "0.4"
+futures-util = "0.3"
+object_store = { version = "0.14.2", default-features = false, features = ["aws-base", "reqwest", "ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
@@ -32,3 +37,7 @@ tower = { version = "0.5", features = ["util"] }
 [[test]]
 name = "cli"
 path = "tests/cli.rs"
+
+[profile.release]
+# Optimize for size to meet the Alpine image budget.
+opt-level = "s"

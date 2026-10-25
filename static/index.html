@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Publish self-contained HTML pages with SlopBox. Connect your agent, publish a page, and share a link that stays up to date.">
+  <meta name="description" content="Publish self-contained HTML pages with SlopDrive. Connect your agent, publish a page, and share a link that stays up to date.">
   <meta name="theme-color" content="#141713">
-  <title>SlopBox · A home for your HTML</title>
+  <title>SlopDrive · A home for your HTML</title>
   <style>
     :root { color-scheme: dark; --paper: #141713; --ink: #f0f2e9; --muted: #aab2a1; --line: #343c30; --accent: #ff916c; font: 16px/1.6 system-ui, sans-serif; }
     * { box-sizing: border-box; }
@@ -93,8 +93,8 @@
   <a class="skip" href="#main">Skip to content</a>
   <div class="wrap">
     <header>
-      <a class="brand" href="/" aria-label="SlopBox home"><span class="mark" aria-hidden="true">&lt;/&gt;</span>SlopBox</a>
-      <nav aria-label="Main navigation"><a href="#connect">Connect</a><a href="https://github.com/andypenno/SlopBox">GitHub ↗</a></nav>
+      <a class="brand" href="/" aria-label="SlopDrive home"><span class="mark" aria-hidden="true">&lt;/&gt;</span>SlopDrive</a>
+      <nav aria-label="Main navigation"><a href="#connect">Connect</a><a href="https://github.com/andypenno/SlopDrive">GitHub ↗</a></nav>
     </header>
     <main id="main">
       <section class="hero" aria-labelledby="hero-title">
@@ -126,19 +126,19 @@
       <section class="connect" id="connect" aria-labelledby="connect-title">
         <div>
           <p class="eyebrow">Get connected</p>
-          <h2 id="connect-title">Your agent makes it.<br>SlopBox hosts it.</h2>
-          <p>Add SlopBox to your agent's MCP connections, then ask it to publish a self-contained HTML page.</p>
+          <h2 id="connect-title">Your agent makes it.<br>SlopDrive hosts it.</h2>
+          <p>Add SlopDrive to your agent's MCP connections, then ask it to publish a self-contained HTML page.</p>
           <ol class="steps">
-            <li><strong>Get an API key</strong><p>Ask the instance owner for a key. Keys can edit any known page on this instance. Running your own instance? Create one with <code>slopbox keys create</code>.</p></li>
+            <li><strong>Get an API key</strong><p>Ask the instance owner for a key. Keys can edit any known page on this instance. Running your own instance? Create one with <code>slopdrive keys create</code>.</p></li>
             <li><strong>Add the connection</strong><p>Use this site's address followed by <code>/mcp</code>. Replace the example address and key in the configuration.</p></li>
-            <li><strong>Give your agent the skill</strong><p>Install <a href="https://github.com/andypenno/SlopBox/tree/main/skills/slopbox">the SlopBox skill</a> through your agent's skill loader. Keep the connection name <code>slopbox</code>, then ask your agent to publish and share a link.</p></li>
+            <li><strong>Give your agent the skill</strong><p>Install <a href="https://github.com/andypenno/SlopDrive/tree/main/skills/slopdrive">the SlopDrive skill</a> through your agent's skill loader. Keep the connection name <code>slopdrive</code>, then ask your agent to publish and share a link.</p></li>
           </ol>
         </div>
         <div class="config">
           <div class="config-title"><span>MCP connection configuration</span><button class="copy" id="copy-config" type="button">Copy config</button></div>
           <pre id="config-block" tabindex="0" aria-label="Example MCP configuration"><code id="config-json">{
   "mcpServers": {
-    "slopbox": {
+    "slopdrive": {
       "url": "https://pages.example.com/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
@@ -151,7 +151,7 @@
         </div>
       </section>
     </main>
-    <footer><p>SlopBox. A small place for things you make.</p><a href="https://github.com/andypenno/SlopBox#readme">Run your own instance ↗</a></footer>
+    <footer><p>SlopDrive. A small place for things you make.</p><a href="https://github.com/andypenno/SlopDrive#readme">Run your own instance ↗</a></footer>
   </div>
   <script>
     const copyButton = document.getElementById('copy-config');

@@ -1,3 +1,4 @@
+mod migrations;
 mod sql;
 
 use self::sql::{PgBackend, SqliteBackend};
@@ -18,6 +19,8 @@ pub enum Provider {
 
 #[derive(Args, Clone)]
 pub struct DatabaseConfig {
+    #[command(flatten)]
+    pub content: crate::content::ContentConfig,
     #[arg(long, env = "DATABASE_PROVIDER", value_enum, default_value = "sqlite")]
     pub provider: Provider,
     #[arg(long, env = "DATABASE_URL", hide_env_values = true)]
@@ -52,6 +55,7 @@ mod tests;
 
 impl DatabaseConfig {
     pub async fn open(&self, root: &Path) -> Result<Arc<dyn Storage>, StoreError> {
+        let content = self.content.open()?;
         if !(1..=32).contains(&self.max_connections)
             || !(1..=60000).contains(&self.connect_timeout_ms)
             || !(1..=60000).contains(&self.query_timeout_ms)
@@ -94,7 +98,7 @@ impl DatabaseConfig {
                                 StoreError::Configuration("invalid SQLite DATABASE_URL")
                             })?
                         }
-                        None => SqliteConnectOptions::new().filename(root.join("slopbox.sqlite")),
+                        None => SqliteConnectOptions::new().filename(root.join("slopdrive.sqlite")),
                     };
                     let path = options.get_filename();
                     if path == Path::new(":memory:")
@@ -142,7 +146,7 @@ impl DatabaseConfig {
                             Err(error) => return Err(error.into()),
                         }
                     };
-                    let backend = SqliteBackend(pool);
+                    let mut backend = SqliteBackend(pool, content);
                     backend.initialize().await?;
                     Ok(Arc::new(backend) as Arc<dyn Storage>)
                 }
@@ -153,7 +157,7 @@ impl DatabaseConfig {
                         .acquire_timeout(timeout)
                         .connect_with(options)
                         .await?;
-                    let backend = PgBackend(pool);
+                    let mut backend = PgBackend(pool, content);
                     backend.initialize(schema).await?;
                     Ok(Arc::new(backend) as Arc<dyn Storage>)
                 }
@@ -165,7 +169,7 @@ impl DatabaseConfig {
     }
 
     fn postgres_options(&self) -> Result<(PgConnectOptions, &str), StoreError> {
-        let schema = self.schema.as_deref().unwrap_or("slopbox");
+        let schema = self.schema.as_deref().unwrap_or("slopdrive");
         if schema.is_empty()
             || schema.len() > 63
             || schema.starts_with("pg_")

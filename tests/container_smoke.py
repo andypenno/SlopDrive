@@ -59,16 +59,17 @@ def tool(base, key, name, arguments):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", choices=["docker", "podman"], required=True)
-    parser.add_argument("--image", default="slopbox:ci")
+    parser.add_argument("--image", default="slopdrive:ci")
     parser.add_argument("--other-image")
     args = parser.parse_args()
-    name = "slopbox-smoke-" + uuid.uuid4().hex
+    name = "slopdrive-smoke-" + uuid.uuid4().hex
     volume = name + "-data"
     engine = args.engine
     command(engine, "volume", "create", volume)
     try:
-        assert "slopbox" in command(engine, "run", "--rm", args.image, "--help")
+        assert "slopdrive" in command(engine, "run", "--rm", args.image, "--help")
         assert command(engine, "run", "--rm", "--entrypoint", "id", args.image, "-u") == "10001"
+        command(engine, "run", "--rm", "--entrypoint", "test", args.image, "-r", "/usr/share/licenses/slopdrive/LICENSE")
         key_id, key = command(engine, "run", "--rm", "-v", volume + ":/data", args.image, "keys", "create").split()
         command(engine, "run", "-d", "--name", name, "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=https://pages.example/", args.image)
         port = command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1]

@@ -1,3 +1,4 @@
+mod content;
 mod database;
 mod helpers;
 mod keys;
@@ -29,7 +30,7 @@ use storage::{Storage, StoreError};
 use url::Url;
 
 #[derive(Parser)]
-#[command(name = "slopbox", about = "Single-file HTML host")]
+#[command(name = "slopdrive", about = "Single-file HTML host")]
 struct Cli {
     #[arg(long, env = "STORAGE_PATH", default_value = "/data")]
     storage_path: PathBuf,
@@ -432,6 +433,10 @@ async fn get_html(
 #[cfg(test)]
 #[path = "../tests/support/helpers.rs"]
 mod test_helpers;
+
+#[cfg(test)]
+#[path = "../tests/support/s3.rs"]
+mod test_s3;
 
 #[cfg(test)]
 #[path = "../tests/http.rs"]

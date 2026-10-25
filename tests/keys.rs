@@ -14,7 +14,7 @@ async fn keys_are_hashed_revoked_across_connections_and_listed_in_order() {
     );
     let reopened = KeyStore::new(fixture.config.open(fixture.dir.path()).await.unwrap());
     assert!(reopened.valid(&key).await.unwrap());
-    for wrong in ["bad", "sb_invalid", &format!("sb_{id}_{}", "0".repeat(64))] {
+    for wrong in ["bad", "sd_invalid", &format!("sd_{id}_{}", "0".repeat(64))] {
         assert!(!reopened.valid(wrong).await.unwrap());
     }
     let listed = keys.list().await.unwrap();
