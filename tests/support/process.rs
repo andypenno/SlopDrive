@@ -1,13 +1,14 @@
+use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 pub struct Process(pub Option<Child>);
 
 impl Process {
-    pub fn spawn(command: &mut Command) -> Self {
+    pub fn spawn(command: &mut Command, stdout: Stdio) -> Self {
         Self(Some(
             command
-                .stdout(Stdio::piped())
+                .stdout(stdout)
                 .stderr(Stdio::piped())
                 .spawn()
                 .unwrap(),
@@ -39,7 +40,7 @@ impl Drop for Process {
 }
 
 pub fn output(command: &mut Command) -> Output {
-    Process::spawn(command)
+    Process::spawn(command, Stdio::piped())
         .output(Duration::from_secs(5))
         .unwrap_or_else(|output| {
             panic!(
@@ -47,4 +48,16 @@ pub fn output(command: &mut Command) -> Output {
                 String::from_utf8_lossy(&output.stderr)
             )
         })
+}
+
+pub fn wait_for_log(path: &Path, message: &str) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let log = std::fs::read_to_string(path).unwrap();
+        if log.contains(message) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "missing {message}: {log}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
