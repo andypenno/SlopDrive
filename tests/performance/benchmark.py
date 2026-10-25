@@ -11,13 +11,14 @@ import re
 import signal
 import subprocess
 import threading
+import tempfile
 import time
 import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
 
-from budgets import evaluate, number, oci_size, policy_hash, validate_policy
+from budgets import MODES, evaluate, number, oci_size, policy_hash, validate_policy
 
 
 def command(*args):
@@ -214,8 +215,9 @@ def cgroup_path(engine, name, resources):
     return path
 
 
-def isolated_network(engine, name):
-    command(engine, "network", "create", "--internal", name)
+def isolated_network(engine, name, create=True):
+    if create:
+        command(engine, "network", "create", "--internal", name)
     metadata = json.loads(command(engine, "network", "inspect", name))[0]
     if metadata.get("Internal", metadata.get("internal")) is not True:
         raise RuntimeError("container engine did not disable external networking")
@@ -232,118 +234,149 @@ def container_endpoint(engine, name, network):
     return f"http://127.0.0.1:{port}"
 
 
-def run_sample(engine, image, policy):
+def backend_environment(mode, namespace):
+    if mode not in MODES:
+        raise ValueError("unknown storage mode")
+    database, content = mode.split("-")
+    settings = {"DATABASE_PROVIDER": database, "CONTENT_STORAGE": content}
+    required = {}
+    if database == "postgres":
+        required["DATABASE_URL"] = "DATABASE_TEST_POSTGRES_URL"
+        settings.update(DATABASE_SCHEMA="perf_" + namespace, DATABASE_TLS_MODE="disable")
+    if content == "s3":
+        required.update({"S3_" + name: "S3_TEST_" + name for name in ("ENDPOINT", "BUCKET", "REGION", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")})
+        settings.update(S3_PREFIX="performance/" + namespace, S3_ALLOW_HTTP=os.environ.get("S3_TEST_ALLOW_HTTP", "false"))
+    for destination, source in required.items():
+        value = os.environ.get(source)
+        if not value:
+            raise ValueError("missing required backend setting: " + source)
+        settings[destination] = value
+    if any("\n" in value or "\r" in value for value in settings.values()):
+        raise ValueError("backend settings must be single-line values")
+    return settings
+
+
+def run_sample(engine, image, policy, mode="sqlite-database", backend_network=None):
     name = "slopdrive-perf-" + uuid.uuid4().hex
     volume = name + "-data"
-    network = name + "-network"
+    network = backend_network or name + "-network"
+    settings = backend_environment(mode, name.removeprefix("slopdrive-perf-"))
+    if mode != "sqlite-database" and backend_network is None:
+        raise ValueError("external modes require an explicitly supplied internal backend network")
     resources = policy["resources"]
     envelope = ["--cpus", str(resources["cpus"]), "--memory", str(resources["memory_bytes"]), "--memory-swap", str(resources["memory_bytes"])]
-    command(engine, "volume", "create", volume)
-    try:
-        isolated_network(engine, network)
-        _, key = command(engine, "run", "--rm", "--network", "none", *envelope, "-v", volume + ":/data", image, "keys", "create").split()
-        start = time.monotonic()
-        command(engine, "run", "-d", "--name", name, *envelope, "--network", network, "--pids-limit", "128", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=http://127.0.0.1/", image)
-        base = container_endpoint(engine, name, network)
-        ready(base, start + 15)
-        result = {"startup": {"ready_ms": (time.monotonic() - start) * 1000}}
-        cgroup = cgroup_path(engine, name, resources)
-        pages = []
-        for size in (1024, 65536, 1048576):
-            content = page(size, 0)
-            pages.append((upload(base, key, content), content))
-        pinned_pages = pages.copy()
-        history_id = pages[1][0]["upload_id"]
-        versions = {pages[1][0]["content_hash"]}
-        for index in range(1, 100):
-            content = page(65536, index)
-            value = rpc(base, key, "update_html", {"upload_id": history_id, "content": content})
-            verify_hash(value, content)
-            versions.add(value["content_hash"])
-        pages[1] = (value, content)
-        history = rpc(base, key, "list_versions", {"upload_id": history_id})
-        if {v["content_hash"] for v in history["versions"]} != versions:
-            raise RuntimeError("history seeding lost versions")
-        before, _ = counters(cgroup)
-        start = time.monotonic()
-        with memory_samples(cgroup) as samples:
+    with tempfile.NamedTemporaryFile(mode="w", prefix="slopdrive-perf-", encoding="utf-8") as environment:
+        environment.write("".join(key + "=" + value + "\n" for key, value in settings.items()))
+        environment.flush()
+        command(engine, "volume", "create", "--label", "slopdrive.performance-network=" + network, volume)
+        try:
+            isolated_network(engine, network, backend_network is None)
+            _, key = command(engine, "run", "--rm", "--network", network if backend_network else "none", "--env-file", environment.name, *envelope, "-v", volume + ":/data", image, "keys", "create").split()
+            start = time.monotonic()
+            command(engine, "run", "-d", "--name", name, "--env-file", environment.name, *envelope, "--network", network, "--pids-limit", "128", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=http://127.0.0.1/", image)
+            base = container_endpoint(engine, name, network)
+            ready(base, start + 15)
+            result = {"startup": {"ready_ms": (time.monotonic() - start) * 1000}}
+            cgroup = cgroup_path(engine, name, resources)
+            pages = []
+            for size in (1024, 65536, 1048576):
+                content = page(size, 0)
+                pages.append((upload(base, key, content), content))
+            pinned_pages = pages.copy()
+            history_id = pages[1][0]["upload_id"]
+            versions = {pages[1][0]["content_hash"]}
+            for index in range(1, 100):
+                content = page(65536, index)
+                value = rpc(base, key, "update_html", {"upload_id": history_id, "content": content})
+                verify_hash(value, content)
+                versions.add(value["content_hash"])
+            pages[1] = (value, content)
+            history = rpc(base, key, "list_versions", {"upload_id": history_id})
+            if {v["content_hash"] for v in history["versions"]} != versions:
+                raise RuntimeError("history seeding lost versions")
+            before, _ = counters(cgroup)
+            start = time.monotonic()
+            with memory_samples(cgroup) as samples:
+                time.sleep(policy["workload"]["idle_seconds"])
+            after, idle_memory = counters(cgroup)
+            result["idle"] = {"memory_bytes": max(samples), "cpu_percent": cpu_percent(before, after, time.monotonic() - start)}
+
+            def read(index):
+                selected = pinned_pages if index % 2 else pages
+                saved, expected = selected[index % len(selected)]
+                path = "/" + saved["upload_id"]
+                if index % 2:
+                    path += "?q=" + saved["content_hash"]
+                status, headers, body = request(base, path)
+                if status != 200 or body != expected.encode() or "sandbox" not in headers.get("Content-Security-Policy", ""):
+                    raise RuntimeError("public read returned incorrect content or policy")
+
+            writes = []
+            writes_lock = threading.Lock()
+
+            def write(index):
+                content = page(65536, 1000 + index)
+                if index % 3 == 0:
+                    saved = upload(base, key, content)
+                elif index % 3 == 1:
+                    saved = rpc(base, key, "upload_html", {"content": content})
+                else:
+                    saved = rpc(base, key, "update_html", {"upload_id": history_id, "content": content})
+                verify_hash(saved, content)
+                status, _, body = request(base, "/" + saved["upload_id"] + "?q=" + saved["content_hash"])
+                if status != 200 or body != content.encode():
+                    raise RuntimeError("write was acknowledged without readable content")
+                history = rpc(base, key, "list_versions", {"upload_id": saved["upload_id"]})
+                if saved["content_hash"] not in {v["content_hash"] for v in history["versions"]}:
+                    raise RuntimeError("write was omitted from history")
+                with writes_lock:
+                    writes.append((saved, content))
+
+            def reject(index):
+                if index % 3 == 0:
+                    status, _, _ = request(base, "/upload", "invalid", b"bad", "multipart/form-data")
+                    expected = 401
+                elif index % 3 == 1:
+                    status, _, _ = request(base, "/" + "0" * 32)
+                    expected = 404
+                else:
+                    data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "upload_html", "arguments": {"content": "x" * 1048577}}}).encode()
+                    status, _, body = request(base, "/mcp", key, data, "application/json")
+                    if status == 200 and json.loads(body).get("result", {}).get("isError") is True:
+                        return
+                    raise RuntimeError("oversized MCP upload was not rejected")
+                if status != expected:
+                    raise RuntimeError("rejected request returned incorrect status")
+
+            for scenario, operation in (("read", read), ("write", write), ("reject", reject)):
+                result[scenario] = workload(cgroup, operation, policy)
             time.sleep(policy["workload"]["idle_seconds"])
-        after, idle_memory = counters(cgroup)
-        result["idle"] = {"memory_bytes": max(samples), "cpu_percent": cpu_percent(before, after, time.monotonic() - start)}
-
-        def read(index):
-            selected = pinned_pages if index % 2 else pages
-            saved, expected = selected[index % len(selected)]
-            path = "/" + saved["upload_id"]
-            if index % 2:
-                path += "?q=" + saved["content_hash"]
-            status, headers, body = request(base, path)
-            if status != 200 or body != expected.encode() or "sandbox" not in headers.get("Content-Security-Policy", ""):
-                raise RuntimeError("public read returned incorrect content or policy")
-
-        writes = []
-        writes_lock = threading.Lock()
-
-        def write(index):
-            content = page(65536, 1000 + index)
-            if index % 3 == 0:
-                saved = upload(base, key, content)
-            elif index % 3 == 1:
-                saved = rpc(base, key, "upload_html", {"content": content})
-            else:
-                saved = rpc(base, key, "update_html", {"upload_id": history_id, "content": content})
-            verify_hash(saved, content)
-            status, _, body = request(base, "/" + saved["upload_id"] + "?q=" + saved["content_hash"])
-            if status != 200 or body != content.encode():
-                raise RuntimeError("write was acknowledged without readable content")
-            history = rpc(base, key, "list_versions", {"upload_id": saved["upload_id"]})
-            if saved["content_hash"] not in {v["content_hash"] for v in history["versions"]}:
-                raise RuntimeError("write was omitted from history")
-            with writes_lock:
-                writes.append((saved, content))
-
-        def reject(index):
-            if index % 3 == 0:
-                status, _, _ = request(base, "/upload", "invalid", b"bad", "multipart/form-data")
-                expected = 401
-            elif index % 3 == 1:
-                status, _, _ = request(base, "/" + "0" * 32)
-                expected = 404
-            else:
-                data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "upload_html", "arguments": {"content": "x" * 1048577}}}).encode()
-                status, _, body = request(base, "/mcp", key, data, "application/json")
-                if status == 200 and json.loads(body).get("result", {}).get("isError") is True:
-                    return
-                raise RuntimeError("oversized MCP upload was not rejected")
-            if status != expected:
-                raise RuntimeError("rejected request returned incorrect status")
-
-        for scenario, operation in (("read", read), ("write", write), ("reject", reject)):
-            result[scenario] = workload(cgroup, operation, policy)
-        time.sleep(policy["workload"]["idle_seconds"])
-        result["recovery"] = {"memory_growth_bytes": max(0, counters(cgroup)[1] - idle_memory)}
-        state = json.loads(command(engine, "inspect", name))[0]["State"]
-        if not state.get("Running") or state.get("OOMKilled"):
-            raise RuntimeError("container stopped or was OOM-killed")
-        command(engine, "restart", "--time", "5", name)
-        base = container_endpoint(engine, name, network)
-        ready(base, time.monotonic() + 15)
-        for saved, content in writes:
-            status, _, body = request(base, "/" + saved["upload_id"] + "?q=" + saved["content_hash"])
-            if status != 200 or body != content.encode():
-                raise RuntimeError("acknowledged write did not survive restart")
-        return result
-    finally:
-        cleanup_errors = []
-        for args in ([engine, "rm", "-f", name], [engine, "volume", "rm", volume], [engine, "network", "rm", network]):
-            try:
-                result = subprocess.run(args, capture_output=True, timeout=30)
-                if result.returncode:
-                    cleanup_errors.append(" ".join(args) + ": " + result.stderr.decode(errors="replace").strip())
-            except (OSError, subprocess.TimeoutExpired) as error:
-                cleanup_errors.append(str(error))
-        if cleanup_errors:
-            raise RuntimeError("container cleanup failed: " + "; ".join(cleanup_errors))
+            result["recovery"] = {"memory_growth_bytes": max(0, counters(cgroup)[1] - idle_memory)}
+            state = json.loads(command(engine, "inspect", name))[0]["State"]
+            if not state.get("Running") or state.get("OOMKilled"):
+                raise RuntimeError("container stopped or was OOM-killed")
+            command(engine, "restart", "--time", "5", name)
+            base = container_endpoint(engine, name, network)
+            ready(base, time.monotonic() + 15)
+            for saved, content in writes:
+                status, _, body = request(base, "/" + saved["upload_id"] + "?q=" + saved["content_hash"])
+                if status != 200 or body != content.encode():
+                    raise RuntimeError("acknowledged write did not survive restart")
+            return result
+        finally:
+            cleanup_errors = []
+            cleanup = [[engine, "rm", "-f", name], [engine, "volume", "rm", volume]]
+            if backend_network is None:
+                cleanup.append([engine, "network", "rm", network])
+            for args in cleanup:
+                try:
+                    result = subprocess.run(args, capture_output=True, timeout=30)
+                    if result.returncode:
+                        cleanup_errors.append(" ".join(args) + ": " + result.stderr.decode(errors="replace").strip())
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    cleanup_errors.append(str(error))
+            if cleanup_errors:
+                raise RuntimeError("container cleanup failed: " + "; ".join(cleanup_errors))
 
 
 def main():
@@ -357,15 +390,19 @@ def main():
     parser.add_argument("--collect-only", action="store_true")
     parser.add_argument("--profile", choices=["local", "ci"], default="local")
     parser.add_argument("--revision")
+    parser.add_argument("--mode", choices=MODES, default="sqlite-database")
+    parser.add_argument("--backend-network")
     args = parser.parse_args()
     if args.profile == "ci" and args.revision is None:
         parser.error("the CI profile requires --revision")
+    if args.mode != "sqlite-database" and args.backend_network is None:
+        parser.error("external modes require --backend-network")
     policy = json.loads(args.policy.read_text())
     validate_policy(policy)
     cpu_info = Path("/proc/cpuinfo").read_text().splitlines()
     model = next((line.split(":", 1)[1].strip() for line in cpu_info if line.startswith("model name")), "unknown")
     report = {
-        "schema": 1, "variant": args.variant, "profile": args.profile, "policy_sha256": policy_hash(policy), "runner_pid": os.getpid(),
+        "schema": 1, "mode": args.mode, "variant": args.variant, "profile": args.profile, "policy_sha256": policy_hash(policy), "runner_pid": os.getpid(),
         "harness_sha256": hashlib.sha256(Path(__file__).read_bytes() + Path(__file__).with_name("budgets.py").read_bytes()).hexdigest(),
         "complete": False, "diagnostic": args.collect_only, "samples": [],
         "host": {"kernel": platform.release(), "machine": platform.machine(), "engine": command(args.engine, "--version"), "cpu": model, "logical_cpus": os.cpu_count()},
@@ -391,7 +428,7 @@ def main():
         report["image"] = {**metadata, "unpacked_bytes": inspected["Size"], "source_revision": labels.get("org.opencontainers.image.revision")}
         save()
         for _ in range(policy["runs"]):
-            report["samples"].append(run_sample(args.engine, args.image, policy))
+            report["samples"].append(run_sample(args.engine, args.image, policy, args.mode, args.backend_network))
             save()
         report["complete"] = True
         save()

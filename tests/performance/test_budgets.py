@@ -42,6 +42,7 @@ def policy_and_report():
         "workload": {"requests": 100, "concurrency": 4, "idle_seconds": 5},
         "image_limits": {v: {"compressed_bytes": 1000, "unpacked_bytes": 2000} for v in ("standard", "alpine")},
         "scenario_limits": limits,
+        "backend_limits": {mode: {} for mode in performance.MODES[1:]},
     }
     baseline = {scenario: {metric: bound.get("max", bound.get("min")) for metric, bound in limits[scenario].items() if metric in ("cpu_ms_per_op", "operations_per_second")} for scenario in ("read", "write", "reject")}
     policy["reference"] = {
@@ -53,6 +54,7 @@ def policy_and_report():
         sample[scenario].update(completed=100, errors=0)
     report = {
         "schema": 1,
+        "mode": "sqlite-database",
         "variant": "standard",
         "profile": "local",
         "policy_sha256": performance.policy_hash(policy),
@@ -112,6 +114,40 @@ def check_budgets():
                 rejects(performance.evaluate, policy, changed)
             del changed["samples"][0][scenario][metric]
             rejects(performance.evaluate, policy, changed)
+
+
+def check_backend_limits():
+    policy, report = policy_and_report()
+    for mode in performance.MODES:
+        report["mode"] = mode
+        performance.evaluate(policy, report)
+    report["mode"] = "unknown"
+    rejects(performance.evaluate, policy, report)
+    del report["mode"]
+    rejects(performance.evaluate, policy, report)
+    report["mode"] = "postgres-s3"
+    policy["backend_limits"]["postgres-s3"] = {"read": {"operations_per_second": {"min": 5}}}
+    report["policy_sha256"] = performance.policy_hash(policy)
+    report["samples"][0]["read"]["operations_per_second"] = 5
+    performance.evaluate(policy, report)
+    policy["reference"]["profiles"]["local"]["standard"]["read"]["cpu_ms_per_op"] = 1
+    policy["backend_limits"]["postgres-s3"]["read"]["cpu_ms_per_op"] = {"max": 20}
+    report["policy_sha256"] = performance.policy_hash(policy)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 15
+    performance.evaluate(policy, report)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 20.01
+    rejects(performance.evaluate, policy, report)
+    report["samples"][0]["read"]["cpu_ms_per_op"] = 0
+    report["samples"][0]["read"]["operations_per_second"] = 4.99
+    rejects(performance.evaluate, policy, report)
+    report["mode"] = "sqlite-database"
+    rejects(performance.evaluate, policy, report)
+    for invalid in (None, {"unknown": {}}, {"read": {"unknown": {"max": 1}}}, {"read": {"p95_ms": {"min": 1}}}, {"read": {"p95_ms": {"max": -1}}}):
+        changed = copy.deepcopy(policy)
+        changed["backend_limits"]["postgres-s3"] = invalid
+        rejects(performance.validate_policy, changed)
+    del policy["backend_limits"]["postgres-s3"]
+    rejects(performance.validate_policy, policy)
 
 
 def check_incomplete_and_policy_tampering():
@@ -228,6 +264,7 @@ def check_runner_cpu_allowances():
 if __name__ == "__main__":
     check_policy_boundaries()
     check_budgets()
+    check_backend_limits()
     check_incomplete_and_policy_tampering()
     check_fixed_reference()
     check_runner_cpu_allowances()

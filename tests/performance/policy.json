@@ -16,8 +16,8 @@
       "unpacked_bytes": 125000000
     },
     "alpine": {
-      "compressed_bytes": 10000000,
-      "unpacked_bytes": 20000000
+      "compressed_bytes": 15000000,
+      "unpacked_bytes": 30000000
     }
   },
   "scenario_limits": {
@@ -79,6 +79,77 @@
       },
       "operations_per_second": {
         "min": 150
+      }
+    }
+  },
+  "backend_limits": {
+    "postgres-database": {
+      "startup": {
+        "ready_ms": {
+          "max": 1000
+        }
+      },
+      "read": {
+        "cpu_ms_per_op": {
+          "max": 6
+        },
+        "operations_per_second": {
+          "min": 150
+        }
+      },
+      "write": {
+        "cpu_ms_per_op": {
+          "max": 8
+        },
+        "operations_per_second": {
+          "min": 80
+        }
+      }
+    },
+    "sqlite-s3": {
+      "startup": {
+        "ready_ms": {
+          "max": 1000
+        }
+      },
+      "read": {
+        "cpu_ms_per_op": {
+          "max": 5
+        },
+        "operations_per_second": {
+          "min": 120
+        }
+      },
+      "write": {
+        "cpu_ms_per_op": {
+          "max": 12
+        },
+        "operations_per_second": {
+          "min": 40
+        }
+      }
+    },
+    "postgres-s3": {
+      "startup": {
+        "ready_ms": {
+          "max": 1000
+        }
+      },
+      "read": {
+        "cpu_ms_per_op": {
+          "max": 6
+        },
+        "operations_per_second": {
+          "min": 100
+        }
+      },
+      "write": {
+        "cpu_ms_per_op": {
+          "max": 10
+        },
+        "operations_per_second": {
+          "min": 50
+        }
       }
     }
   },
@@ -235,6 +306,75 @@
         }
       },
       "basis": "Rounded allowances shared across runner profiles; measured SQLite maxima documented in docs/performance.md. Absolute CPU caps unchanged."
+    },
+    "backend_modes": {
+      "application_version": "1.0.0",
+      "topology": "same-host isolated internal network",
+      "postgres_version": "postgres (PostgreSQL) 17.11",
+      "garage_version": "garage v2.4.1 [features: bundled-libs, consul-discovery, fjall, journald, k2v, kubernetes-discovery, lmdb, metrics, sqlite, syslog, telemetry-otlp]",
+      "backend_resources": {
+        "cpus_each": 1,
+        "memory_bytes_each": 536870912
+      },
+      "host": {
+        "kernel": "6.12.111+deb13-amd64",
+        "machine": "x86_64",
+        "engine": "podman version 5.4.2",
+        "cpu": "Intel(R) Core(TM) i5-8500T CPU @ 2.10GHz",
+        "logical_cpus": 4
+      },
+      "repetitions": 3,
+      "harness_sha256": "fb5c8868e9076f097d138e42e875432696d07fab9805083667c5b641680326a4",
+      "calibration_policy_sha256": "67379a428e9db315671063b506a49eb9f7f394f8fa05f9ad2dc66086528ed575",
+      "image_digests": {
+        "standard": "sha256:4954a418e1b0833b36daa75b1f2b4a74fc96ba2196d60032ed69704f53c56fbb",
+        "alpine": "sha256:9dcf9de62b83d7a5685697faeed4767bb047161a83dcf1e95547f8e1e9f53bfe"
+      },
+      "maximum_baseline_cpu_throughput_drift_ratio": 1.0523309827583383,
+      "measured_extrema": {
+        "postgres-database": {
+          "startup_ms_max": 409.966,
+          "p95_ms_max": 39.114,
+          "cpu_ms_per_op_max": {
+            "read": 3.38,
+            "write": 5.254,
+            "reject": 2.103
+          },
+          "operations_per_second_min": {
+            "read": 246.637,
+            "write": 139.894,
+            "reject": 250.617
+          }
+        },
+        "sqlite-s3": {
+          "startup_ms_max": 352.75,
+          "p95_ms_max": 79.636,
+          "cpu_ms_per_op_max": {
+            "read": 3.267,
+            "write": 6.812,
+            "reject": 1.867
+          },
+          "operations_per_second_min": {
+            "read": 224.061,
+            "write": 76.672,
+            "reject": 272.525
+          }
+        },
+        "postgres-s3": {
+          "startup_ms_max": 371.64,
+          "p95_ms_max": 73.56,
+          "cpu_ms_per_op_max": {
+            "read": 3.824,
+            "write": 6.075,
+            "reject": 1.768
+          },
+          "operations_per_second_min": {
+            "read": 195.96,
+            "write": 94.314,
+            "reject": 404.637
+          }
+        }
+      }
     }
   }
 }
