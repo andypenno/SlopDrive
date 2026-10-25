@@ -45,6 +45,22 @@ fn fingerprint_tracks_logical_schema_and_not_provider_sql() {
 #[tokio::test]
 async fn pending_migrations_are_atomic_repeatable_and_validate_the_ledger() {
     let fixture = TestApp::new().await;
+    let original = b"<p>preserve across migrations</p>";
+    let saved = fixture.state.storage.create(original).await.unwrap();
+    let changed = b"<p>preserve latest too</p>";
+    let latest = fixture
+        .state
+        .storage
+        .update(&saved.upload_id, changed)
+        .await
+        .unwrap();
+    let versions = fixture
+        .state
+        .storage
+        .versions(&saved.upload_id)
+        .await
+        .unwrap();
+    let key_ids = fixture.state.keys.list().await.unwrap();
     macro_rules! check {
         ($pool:expr, $db:ty, $apply:ident) => {{
             let pool = $pool;
@@ -140,6 +156,41 @@ async fn pending_migrations_are_atomic_repeatable_and_validate_the_ledger() {
         TestDatabase::Sqlite(pool) => check!(pool, sqlx::Sqlite, apply_sqlite),
         TestDatabase::Postgres(pool) => check!(pool, sqlx::Postgres, apply_postgres),
     }
+    for (selected, content) in [
+        (None, changed.as_slice()),
+        (
+            Some(saved.version.content_hash.as_str()),
+            original.as_slice(),
+        ),
+        (
+            Some(latest.version.content_hash.as_str()),
+            changed.as_slice(),
+        ),
+    ] {
+        assert_eq!(
+            fixture
+                .state
+                .storage
+                .get(&saved.upload_id, selected)
+                .await
+                .unwrap(),
+            content
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(
+            fixture
+                .state
+                .storage
+                .versions(&saved.upload_id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(versions).unwrap()
+    );
+    assert_eq!(fixture.state.keys.list().await.unwrap(), key_ids);
+    assert!(fixture.state.keys.valid(&fixture.key).await.unwrap());
 }
 
 #[tokio::test]
