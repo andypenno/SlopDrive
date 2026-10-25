@@ -16,4 +16,6 @@ Renderer changes do not change logical checksums. Verify their effect on both pr
 
 Add only operations required by an actual migration. There is no general schema-diff engine, down-migration system or SQLite table-rebuild planner. If a future change needs ALTER or a rebuild, add its shared operation and provider implementations together with rollback and data-preservation tests. Shared runner tests use a test-only second table-creation migration.
 
-The initial baseline intentionally rejects older pre-1.x histories. Follow [database recreation requirements](database.md#schema-and-backups) rather than editing checksums or fabricating ledger entries.
+Version 1.0.0 freezes the initial baseline and its encoding. It intentionally rejects earlier development histories. Follow [database recreation requirements](database.md#schema-and-backups) rather than editing checksums or fabricating ledger entries.
+
+Released databases must survive every supported 1.x upgrade. Append migrations rather than rewriting the baseline or ledger encoding, and prove that pages, key hashes, timestamps, ordering, latest selection and content-store bindings survive both successful migrations and rollback. A newer schema must fail safely in an older binary; use a compatible backup for rollback when required.

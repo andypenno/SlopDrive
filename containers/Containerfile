@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install --yes --no-install-recommends ca-certifica
 RUN groupadd --gid 10001 slopdrive && useradd --uid 10001 --gid 10001 --no-create-home slopdrive \
     && mkdir /data && chown slopdrive:slopdrive /data
 COPY --from=build /src/target/release/slopdrive /usr/local/bin/slopdrive
+COPY LICENSE /usr/share/licenses/slopdrive/LICENSE
 USER 10001:10001
 VOLUME /data
 EXPOSE 3000

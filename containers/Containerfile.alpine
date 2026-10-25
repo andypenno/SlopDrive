@@ -11,6 +11,7 @@ FROM docker.io/library/alpine:3.23
 RUN addgroup -g 10001 slopdrive && adduser -D -H -u 10001 -G slopdrive slopdrive \
     && mkdir /data && chown slopdrive:slopdrive /data
 COPY --from=build /src/target/release/slopdrive /usr/local/bin/slopdrive
+COPY LICENSE /usr/share/licenses/slopdrive/LICENSE
 USER 10001:10001
 VOLUME /data
 EXPOSE 3000

@@ -39,7 +39,7 @@ fn schema_error(error: sqlx::Error) -> StoreError {
         _ => return error.into(),
     }
     StoreError::Configuration(
-        "incompatible database schema; recreate pre-1.x development databases manually",
+        "incompatible database schema; use a compatible SlopDrive version or restore a verified backup",
     )
 }
 
@@ -56,7 +56,7 @@ macro_rules! runner {
             let rows = sqlx::query_as::<$db, (i64, String)>("SELECT version, checksum FROM schema_migrations ORDER BY version")
                 .fetch_all(&mut **tx).await.map_err(schema_error)?;
             if rows.len() > migrations.len() || rows.iter().zip(migrations).any(|((version, recorded), migration)| *version != migration.version || *recorded != checksum(migration)) {
-                return Err(StoreError::Configuration("unsupported or modified database schema; recreate pre-1.x development databases manually"));
+                return Err(StoreError::Configuration("unsupported or modified database schema; use a compatible SlopDrive version or restore a verified backup"));
             }
             let migrated = rows.len() < migrations.len();
             for migration in migrations.iter().skip(rows.len()) {

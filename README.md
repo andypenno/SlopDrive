@@ -15,13 +15,13 @@ Published HTML is untrusted. Pages run in a browser sandbox that permits scripts
 Use Docker Compose with [containers/compose.yaml](containers/compose.yaml). Set `SLOPDRIVE_VERSION` to an available image tag and `BASE_URL` to the public HTTPS address served by your reverse proxy. The tag below is an example; it must exist in [GHCR](https://github.com/andypenno/SlopDrive/pkgs/container/slopdrive) before you can pull it. Private packages require `docker login ghcr.io` with a token that has `read:packages`; public packages need no login.
 
 ```sh
-export SLOPDRIVE_VERSION=dev
+export SLOPDRIVE_VERSION=1.0.0
 export BASE_URL=https://pages.example.com/
 docker compose -f containers/compose.yaml pull
 docker compose -f containers/compose.yaml up -d
 ```
 
-Use `dev-alpine` for the Alpine variant. Both variants target Linux amd64 and use the same data format. `stable` tracks the highest versioned release, `latest` tracks successful `main` builds, and `dev` tracks successful `dev` builds. Each channel also has an `-alpine` tag. Pin an exact version for controlled updates; see the [release strategy](docs/releases.md).
+Use `1.0.0-alpine` for the Alpine variant. Both variants target Linux amd64 and use the same data format. `stable` tracks the highest versioned release, `latest` tracks successful `main` builds, and `dev` tracks successful `dev` builds. Each channel also has an `-alpine` tag. Pin an exact version for controlled updates; see the [release strategy](docs/releases.md).
 
 The image runs as UID/GID 10001 and writes to `/data`. If you use a bind mount, make that directory writable by the container's user. The reverse proxy handles TLS and forwards the public origin to port 3000. Restrict network access to your trusted network or VPN.
 
@@ -39,7 +39,7 @@ Revoking a key takes effect without a restart. SQLite stores pages, history and 
 
 SlopDrive can store HTML through a configurable S3-compatible endpoint while SQLite or PostgreSQL retains metadata and keys. See [HTML content storage](docs/content-storage.md) for Garage configuration, the PostgreSQL/S3 Compose example and upgrade requirements.
 
-Source builds now use a fresh migration baseline. Older development databases require [manual recreation](docs/database.md#schema-and-backups), which loses metadata, keys and S3 object references.
+Version 1.0.0 establishes the supported migration baseline. Older development databases require [manual recreation](docs/database.md#schema-and-backups), which loses metadata, keys and S3 object references. Upgrades within 1.x preserve existing data through the shared migrations; see the [compatibility policy](docs/releases.md#compatibility).
 
 To update a compatible installation, change `SLOPDRIVE_VERSION`, then repeat `pull` and `up -d`. Keep the data volume; `down --volumes` deletes it. Check release notes for storage compatibility before rolling back.
 
@@ -83,3 +83,7 @@ Add your instance to your agent's MCP configuration. Replace the example URL wit
 ```
 
 Install the `skills/slopdrive` directory through your agent's skill loader. Keep the connection name `slopdrive` so the skill can use it. You can then ask your agent to publish an HTML page and share the returned link.
+
+## Licence
+
+SlopDrive is licensed under [AGPL-3.0-only](LICENSE). If you modify SlopDrive and let users interact with it over a network, offer those users the corresponding source as required by the licence. Dependency licences remain applicable. See the [1.0.0 release notes](CHANGELOG.md).

@@ -1,6 +1,6 @@
 # Performance budgets
 
-The performance job measures the same standard and Alpine OCI artifacts that runtime CI tests, using the default SQLite backend. It checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed performance checks prevent image publication. PostgreSQL integration follows the approval rule in [testing conventions](testing.md#database-contracts).
+Automatic CI measures the same standard and Alpine OCI artifacts that runtime CI tests, using the default SQLite backend. PostgreSQL and S3 measurements are optional, explicitly selected manual checks; CI does not provision or connect to those backends. The automatic gate checks image size, readiness, idle CPU and memory, workload CPU and memory, verified operation latency, throughput, and memory retained after load. Failed automatic checks prevent image publication. Optional backend runs enforce their selected targets locally and do not gate CI publication. PostgreSQL integration follows the approval rule in [testing conventions](testing.md#database-contracts).
 
 ## Run locally
 
@@ -24,7 +24,44 @@ Build both variants before measuring either one. Do not compile, run another ben
 
 Each invocation has a 20-minute timeout. Ctrl+C or SIGTERM cleans up its containers and volumes and preserves completed repetitions in the report. The report records its PID, image/config digests, policy and harness hashes, host, raw latencies, memory samples, and CPU counters. CI retains reports for seven days.
 
-## Workload and limits
+## Optional PostgreSQL and S3 checks
+
+Follow the external-fixture approval rule in [testing conventions](testing.md). Provision a dedicated PostgreSQL database and a private Garage bucket outside the benchmark. The runner starts only SlopDrive containers. Supply the existing `DATABASE_TEST_POSTGRES_URL` and `S3_TEST_ENDPOINT`, `S3_TEST_BUCKET`, `S3_TEST_REGION`, `S3_TEST_ACCESS_KEY_ID`, `S3_TEST_SECRET_ACCESS_KEY` environment settings. Plaintext Garage fixtures also need `S3_TEST_ALLOW_HTTP=true`.
+
+Attach both backends to a dedicated internal container network and set `PERFORMANCE_NETWORK` to its name. Endpoint hostnames or addresses must be reachable inside that network; localhost would refer to the SlopDrive container itself. The runner rejects a network that permits external traffic. Do not use production databases or buckets.
+
+After building and exporting both images as above, run the external modes serially:
+
+```sh
+: "${PERFORMANCE_NETWORK:?Set the dedicated internal backend network}"
+for variant in standard alpine; do
+  for mode in postgres-database sqlite-s3 postgres-s3; do
+    python3 tests/performance/benchmark.py --engine podman --image "localhost/slopdrive:$variant" --archive "test-output/$variant.tar" --variant "$variant" --mode "$mode" --backend-network "$PERFORMANCE_NETWORK" --policy tests/performance/policy.json --output "test-output/performance-$variant-$mode.json"
+  done
+done
+```
+
+The optional backend targets below apply to both images. Startup may take at most 1 second. The common 500 ms p95, 50 MB idle memory, 128 MB busy memory, 80 MiB recovery-growth and image-size limits still apply. Rejections retain the common 4 ms CPU and 150 op/s limits.
+
+| Storage mode | Read CPU max | Write CPU max | Read throughput min | Verified write throughput min |
+| --- | --- | --- | --- | --- |
+| PostgreSQL/database | 6 ms/op | 8 ms/op | 150 op/s | 80 op/s |
+| SQLite/S3 | 5 ms/op | 12 ms/op | 120 op/s | 40 op/s |
+| PostgreSQL/S3 | 6 ms/op | 10 ms/op | 100 op/s | 50 op/s |
+
+These are coarse regression limits. They were calibrated with three repetitions on both images, with same-batch SQLite baselines before and after the external modes. The maximum shift in median baseline CPU or throughput was 5.3%. The policy records backend versions, resource limits, image and harness identities, host information and measured extrema. Raw results remain generated evidence, not source documentation. The default SQLite targets were not loosened for this reference host.
+
+Readiness timing starts after key creation initializes the sample schema. Backend service boot and data-migration time are outside that metric.
+
+Each repetition uses a fresh `perf_<random>` PostgreSQL schema and `performance/<random>` S3 prefix. Key management and the server receive identical settings through a temporary file with mode 0600. Reports identify the storage mode without recording credentials. The runner removes its SlopDrive container, data volume and settings file, and preserves the supplied network and backend services. Dispose of the dedicated database and bucket afterward; the runner does not drop schemas or delete objects from supplied resources.
+
+Backend targets use the same-host private-network reference deployment with one CPU and 512 MiB for each backend, PostgreSQL durability defaults, and Garage's consistent mode with one storage replica. PostgreSQL test connections disable TLS. These numbers do not define WAN, replicated-storage or TLS performance. TLS correctness has its own [tests](testing.md). The benchmark verifies SlopDrive's resource limits; fixture owners must enforce the backend limits when comparing results.
+
+Backends remain running across repetitions; their caches, compression and deduplication are part of the reference deployment. These targets describe the verified synthetic workload after seeding, not cold backend startup or maximum sustainable production traffic.
+
+Targets cover one SlopDrive container. The [replica checks](testing.md#s3-contracts-and-independent-processes) exercise distributed correctness separately. Only SlopDrive's cgroup contributes to the CPU and memory requirements. Database and object-store resource consumption is separate. Use `--collect-only` for calibration; diagnostic reports cannot pass the evaluator or substitute for an enforced run. All modes retain body, hash, history and restart checks. Changing mode never substitutes a cheaper workload.
+
+## Workload and default SQLite limits
 
 The approved policy is [tests/performance/policy.json](../tests/performance/policy.json). Both variants get one CPU, 256 MiB of memory, no swap, and three fresh-storage repetitions. Each workload performs 600 verified operations at concurrency four, with five-second idle and recovery intervals.
 
@@ -33,7 +70,7 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Absolute requirement | Limit |
 |---|---|
 | Standard image | 50 MB compressed, 125 MB unpacked |
-| Alpine image | 10 MB compressed, 20 MB unpacked |
+| Alpine image | 15 MB compressed, 30 MB unpacked |
 | Readiness | 500 ms, excluding image pull |
 | Idle memory and CPU | 50 MB, 1% of one CPU |
 | Busy memory | 128 MB |
@@ -42,9 +79,11 @@ Reads alternate current and pinned versions of 1 KiB, 64 KiB, and 1 MiB pages. W
 | Verified write operations | p95 <= 500 ms, CPU <= 12 ms/op, throughput >= 70 op/s |
 | Rejection operations | p95 <= 500 ms, CPU <= 4 ms/op, throughput >= 150 op/s |
 
-In addition, CPU cost cannot exceed twice its fixed reference allowance. CPU allowances are shared across CI and local profiles because runner hardware varies. Standard read/write/rejection allowances are 1/5/2 ms per operation; Alpine allowances are 2/7/2 ms. The absolute CPU caps also apply. Throughput uses only the absolute floors in the table; profile-specific throughput references remain calibration data. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
+For the default SQLite/database mode, CPU cost also cannot exceed twice its fixed reference allowance. CPU allowances are shared across CI and local profiles because runner hardware varies. Standard read/write/rejection allowances are 1/5/2 ms per operation; Alpine allowances are 2/7/2 ms. The absolute CPU caps also apply. Throughput uses only the absolute floors in the table; profile-specific throughput references remain calibration data. References never advance automatically with a PR or a moving image tag. Latency and busy memory use the selected absolute caps.
 
 MB means 1,000,000 bytes; MiB means 1,048,576 bytes. Policy values use bytes.
+
+For 1.0.0, the owner approved Alpine caps of 15 MB compressed and 30 MB unpacked. The preparation images measured 9.42 MB and 19.63 MB respectively. The caps leave room for dependency updates while still failing CI if image size exceeds them; runtime limits are unchanged.
 
 Initial local calibration used five repetitions per variant. The first successful PR run supplied three hosted-runner repetitions per variant. Across those initial runs, standard and Alpine images measured 31.9 MB and 5.7 MB compressed, and 81.6 MB and 12.5 MB unpacked. Maximum readiness was 321 ms, idle memory 12.7 MB, busy memory 77.5 MB, and retained growth 57.8 MB. The initial size and memory caps allowed at least 40% headroom. The initial 100 ms latency cap allowed 88% above the worst write p95 of 53.3 ms. These measurements describe the filesystem backend, not current database headroom. The policy preserves initial calibration metadata and records CPU allowance revisions separately.
 

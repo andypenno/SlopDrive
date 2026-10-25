@@ -69,6 +69,7 @@ def main():
     try:
         assert "slopdrive" in command(engine, "run", "--rm", args.image, "--help")
         assert command(engine, "run", "--rm", "--entrypoint", "id", args.image, "-u") == "10001"
+        command(engine, "run", "--rm", "--entrypoint", "test", args.image, "-r", "/usr/share/licenses/slopdrive/LICENSE")
         key_id, key = command(engine, "run", "--rm", "-v", volume + ":/data", args.image, "keys", "create").split()
         command(engine, "run", "-d", "--name", name, "-p", "127.0.0.1::3000", "-v", volume + ":/data", "-e", "BASE_URL=https://pages.example/", args.image)
         port = command(engine, "port", name, "3000/tcp").splitlines()[0].rsplit(":", 1)[1]

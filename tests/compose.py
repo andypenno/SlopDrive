@@ -11,7 +11,7 @@ environment.pop("COMPOSE_PROJECT_NAME", None)
 assert len(sys.argv) > 1, "pass the Compose command, for example docker compose"
 command = [*sys.argv[1:], "-f", str(ROOT / "containers/compose.yaml"), "config", "--format", "json"]
 volume_names = set()
-for tag in ["0.1.0", "0.1.0-alpine", "stable", "stable-alpine", "latest", "latest-alpine", "dev", "dev-alpine"]:
+for tag in ["1.0.0", "1.0.0-alpine", "stable", "stable-alpine", "latest", "latest-alpine", "dev", "dev-alpine"]:
     settings = dict(environment, SLOPDRIVE_VERSION=tag, BASE_URL="https://pages.example.com/")
     result = subprocess.check_output(command, env=settings, text=True, timeout=30)
     config = json.loads(result)
@@ -27,17 +27,17 @@ for tag in ["0.1.0", "0.1.0-alpine", "stable", "stable-alpine", "latest", "lates
     volume_names.add(config["volumes"]["slopdrive-data"]["name"])
 assert len(volume_names) == 1
 for missing in ["SLOPDRIVE_VERSION", "BASE_URL"]:
-    settings = dict(environment, SLOPDRIVE_VERSION="0.1.0", BASE_URL="https://pages.example.com/")
+    settings = dict(environment, SLOPDRIVE_VERSION="1.0.0", BASE_URL="https://pages.example.com/")
     settings.pop(missing)
     result = subprocess.run(command, env=settings, capture_output=True, text=True, timeout=30)
     assert result.returncode != 0 and missing in result.stderr
 command = [*sys.argv[1:], "-f", str(ROOT / "containers/compose.postgres.yaml"), "config", "--format", "json"]
-settings = dict(environment, SLOPDRIVE_VERSION="0.1.0-alpine", BASE_URL="https://pages.example.com/", DATABASE_PASSWORD="compose-test-only")
+settings = dict(environment, SLOPDRIVE_VERSION="1.0.0-alpine", BASE_URL="https://pages.example.com/", DATABASE_PASSWORD="compose-test-only")
 config = json.loads(subprocess.check_output(command, env=settings, text=True, timeout=30))
 assert config["name"] == "slopdrive"
 service = config["services"]["slopdrive"]
 database = config["services"]["postgres"]
-assert service["image"] == "ghcr.io/andypenno/slopdrive:0.1.0-alpine"
+assert service["image"] == "ghcr.io/andypenno/slopdrive:1.0.0-alpine"
 assert service["environment"]["DATABASE_PROVIDER"] == "postgres"
 assert service["environment"]["DATABASE_HOST"] == "postgres"
 assert service["environment"]["DATABASE_PASSWORD"] == database["environment"]["POSTGRES_PASSWORD"] == settings["DATABASE_PASSWORD"]

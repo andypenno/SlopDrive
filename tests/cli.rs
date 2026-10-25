@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn s3_configuration_errors_do_not_disclose_credentials() {
@@ -245,6 +245,7 @@ fn startup_rejection_tests_cannot_wait_forever_for_a_server() {
                 "--bind-addr",
                 &address.to_string(),
             ]),
+        Stdio::piped(),
     );
     let timeout = std::time::Duration::from_millis(100);
     let outcome = child
@@ -273,6 +274,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         drop(listener);
+        let log = dir.path().join("server.log");
         let mut child = process::Process::spawn(
             Command::new(env!("CARGO_BIN_EXE_slopdrive"))
                 .arg("--storage-path")
@@ -283,7 +285,9 @@ fn termination_signals_drain_an_active_upload_before_exit() {
                     "http://localhost/",
                     "--bind-addr",
                     &address.to_string(),
-                ]),
+                ])
+                .env("RUST_LOG", "info"),
+            std::fs::File::create(&log).unwrap().into(),
         );
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut stream = loop {
@@ -300,8 +304,10 @@ fn termination_signals_drain_an_active_upload_before_exit() {
             .unwrap();
         let prefix = "--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"p.html\"\r\nContent-Type: text/html\r\n\r\n";
         let suffix = "<p>drained</p>\r\n--boundary--\r\n";
-        write!(stream,"POST /upload HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {key}\r\nContent-Type: multipart/form-data; boundary=boundary\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{prefix}",prefix.len()+suffix.len()).unwrap();
-        std::thread::sleep(Duration::from_millis(100));
+        write!(stream,"POST /upload HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {key}\r\nContent-Type: multipart/form-data; boundary=boundary\r\nContent-Length: {}\r\nConnection: close\r\nExpect: 100-continue\r\n\r\n{prefix}",prefix.len()+suffix.len()).unwrap();
+        let mut interim = [0; 25];
+        stream.read_exact(&mut interim).unwrap();
+        assert_eq!(&interim, b"HTTP/1.1 100 Continue\r\n\r\n");
         assert!(
             Command::new("kill")
                 .args(["-s", signal, &child.0.as_mut().unwrap().id().to_string()])
@@ -309,7 +315,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
                 .unwrap()
                 .success()
         );
-        std::thread::sleep(Duration::from_millis(50));
+        process::wait_for_log(&log, "draining requests");
         stream.write_all(suffix.as_bytes()).unwrap();
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();
@@ -349,7 +355,7 @@ fn termination_signals_drain_an_active_upload_before_exit() {
 #[cfg(unix)]
 #[test]
 fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::time::{Duration, Instant};
     let dir = tempfile::tempdir().unwrap();
     let output = process::output(
@@ -363,6 +369,7 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);
+    let log = dir.path().join("server.log");
     let mut child = process::Process::spawn(
         Command::new(env!("CARGO_BIN_EXE_slopdrive"))
             .arg("--storage-path")
@@ -373,7 +380,9 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
                 "http://localhost/",
                 "--bind-addr",
                 &address.to_string(),
-            ]),
+            ])
+            .env("RUST_LOG", "info"),
+        std::fs::File::create(&log).unwrap().into(),
     );
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut stream = loop {
@@ -383,8 +392,13 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
             Err(error) => panic!("server did not start: {error}"),
         }
     };
-    write!(stream,"POST /upload HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {key}\r\nContent-Type: multipart/form-data; boundary=b\r\nContent-Length: 100000\r\n\r\n--b\r\n").unwrap();
-    std::thread::sleep(Duration::from_millis(100));
+    write!(stream,"POST /upload HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {key}\r\nContent-Type: multipart/form-data; boundary=b\r\nContent-Length: 100000\r\nExpect: 100-continue\r\n\r\n--b\r\n").unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut interim = [0; 25];
+    stream.read_exact(&mut interim).unwrap();
+    assert_eq!(&interim, b"HTTP/1.1 100 Continue\r\n\r\n");
     assert!(
         Command::new("kill")
             .args(["-TERM", &child.0.as_mut().unwrap().id().to_string()])
@@ -392,6 +406,7 @@ fn shutdown_exits_with_an_error_when_a_request_does_not_drain() {
             .unwrap()
             .success()
     );
+    process::wait_for_log(&log, "draining requests");
     let output = child
         .output(Duration::from_secs(13))
         .expect("shutdown exceeded its deadline");

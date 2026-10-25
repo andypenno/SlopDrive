@@ -110,9 +110,10 @@ def check_container_endpoint():
 
 
 @contextlib.contextmanager
-def sample_environment():
+def sample_environment(network=None):
     pages = {}
     requests = []
+    environments = []
     address = "172.19.0.2"
 
     def store(content, upload_id=None):
@@ -135,12 +136,16 @@ def sample_environment():
 
     def command(engine, operation, *args):
         nonlocal address
+        if operation == "run" and "--env-file" in args:
+            path = Path(args[args.index("--env-file") + 1])
+            assert path.stat().st_mode & 0o777 == 0o600
+            environments.append((path, dict(line.split("=", 1) for line in path.read_text().splitlines())))
         if operation == "port":
             raise RuntimeError("no published port on internal Docker network")
         if operation == "restart":
             address = "172.19.0.3"
         if operation == "inspect":
-            return json.dumps([{"State": {"Running": True}, "NetworkSettings": {"Networks": {args[0] + "-network": {"IPAddress": address}}}}])
+            return json.dumps([{"State": {"Running": True}, "NetworkSettings": {"Networks": {network or args[0] + "-network": {"IPAddress": address}}}}])
         return "id key"
 
     replacements = {
@@ -157,7 +162,7 @@ def sample_environment():
         cleanup.return_value.returncode = 0
         ready = stack.enter_context(patch.object(benchmark, "ready"))
         workload = stack.enter_context(patch.object(benchmark, "workload", return_value={}))
-        yield {"ready": ready, "cleanup": cleanup, "workload": workload, "requests": requests, "pages": pages}
+        yield {"ready": ready, "cleanup": cleanup, "workload": workload, "requests": requests, "pages": pages, "environments": environments}
 
 
 SAMPLE_POLICY = {"resources": {"cpus": 1, "memory_bytes": 256000000}, "workload": {"idle_seconds": 5}}
@@ -188,8 +193,56 @@ def check_read_versions():
         assert "/page1?q=" + latest not in environment["requests"]
 
 
+def check_backend_configuration():
+    settings = {"DATABASE_TEST_POSTGRES_URL": "postgres://fixture", "S3_TEST_ENDPOINT": "http://garage:3900", "S3_TEST_BUCKET": "fixture", "S3_TEST_REGION": "garage", "S3_TEST_ACCESS_KEY_ID": "fixture-access", "S3_TEST_SECRET_ACCESS_KEY": "fixture-secret", "S3_TEST_ALLOW_HTTP": "true"}
+    with patch.dict(benchmark.os.environ, settings, clear=True):
+        for mode in benchmark.MODES:
+            configured = benchmark.backend_environment(mode, "fixture")
+            assert configured["DATABASE_PROVIDER"] + "-" + configured["CONTENT_STORAGE"] == mode
+            if mode.startswith("postgres-"):
+                assert configured["DATABASE_SCHEMA"] == "perf_fixture"
+                assert configured["DATABASE_URL"] == settings["DATABASE_TEST_POSTGRES_URL"]
+            if mode.endswith("-s3"):
+                assert configured["S3_PREFIX"] == "performance/fixture"
+                assert configured["S3_SECRET_ACCESS_KEY"] == settings["S3_TEST_SECRET_ACCESS_KEY"]
+                assert configured["S3_ALLOW_HTTP"] == "true"
+            if mode != "sqlite-database":
+                with sample_environment() as environment:
+                    rejects(benchmark.run_sample, "docker", "image", SAMPLE_POLICY, mode)
+                    environment["cleanup"].assert_not_called()
+        for field in settings:
+            if field == "S3_TEST_ALLOW_HTTP":
+                continue
+            with patch.dict(benchmark.os.environ, {k: v for k, v in settings.items() if k != field}, clear=True):
+                rejects(benchmark.backend_environment, "postgres-s3", "fixture")
+        with patch.dict(benchmark.os.environ, {"S3_TEST_SECRET_ACCESS_KEY": "private\nINJECTED=true"}):
+            try:
+                benchmark.backend_environment("postgres-s3", "fixture")
+            except ValueError as error:
+                assert "private" not in str(error) and "INJECTED" not in str(error)
+            else:
+                raise AssertionError("multiline setting accepted")
+        with sample_environment("owned-backends") as environment:
+            benchmark.run_sample("docker", "image", SAMPLE_POLICY, "postgres-s3", "owned-backends")
+            assert len(environment["environments"]) == 2
+            assert environment["environments"][0][1] == environment["environments"][1][1]
+            for path, configured in environment["environments"]:
+                assert not path.exists()
+                assert configured["DATABASE_URL"] == settings["DATABASE_TEST_POSTGRES_URL"]
+                assert configured["S3_SECRET_ACCESS_KEY"] == settings["S3_TEST_SECRET_ACCESS_KEY"]
+            assert all(call.args[0][1:3] != ["network", "rm"] for call in environment["cleanup"].call_args_list)
+        with sample_environment("owned-backends") as environment:
+            environment["workload"].side_effect = RuntimeError("failed workload")
+            rejects(benchmark.run_sample, "docker", "image", SAMPLE_POLICY, "postgres-s3", "owned-backends")
+            assert len(environment["cleanup"].call_args_list) == 2
+            assert all(not path.exists() for path, _ in environment["environments"])
+
+
 def check_network_constraints():
     for engine, field in (("docker", "Internal"), ("podman", "internal")):
+        with patch.object(benchmark, "command", return_value=json.dumps([{field: True}])) as command:
+            benchmark.isolated_network(engine, "owned-network", False)
+            command.assert_called_once_with(engine, "network", "inspect", "owned-network")
         with patch.object(benchmark, "command", side_effect=["owned-network", json.dumps([{field: True}])]) as command:
             benchmark.isolated_network(engine, "owned-network")
             assert command.call_args_list[0].args == (engine, "network", "create", "--internal", "owned-network")
@@ -239,6 +292,7 @@ if __name__ == "__main__":
     check_container_endpoint()
     check_restart_endpoint()
     check_read_versions()
+    check_backend_configuration()
     check_network_constraints()
     check_cleanup()
     print("Cgroup counters, CPU intervals, and latency distributions checked")
